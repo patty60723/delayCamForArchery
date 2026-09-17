@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>射箭 Delay Camera — Prototype</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<div class="phone">
+  <div class="phone__notch"></div>
+
+  <!-- hidden raw camera source, used by the frame buffer + gesture engine -->
+  <video id="camSource" playsinline muted autoplay class="hidden-source"></video>
+
+  <div class="screens">
+
+    <!-- 3.1 主畫面 Live/Delay Screen -->
+    <section id="screen-live" class="screen screen--active" data-screen="live">
+      <canvas id="liveCanvas" class="live-canvas"></canvas>
+
+      <div id="warmup" class="warmup hidden">
+        <div class="warmup__spinner"></div>
+        <p class="warmup__text">準備延遲畫面…<span id="warmupCount">5</span> 秒</p>
+      </div>
+
+      <header class="topbar">
+        <span id="gestureBadge" class="badge badge--muted">手勢辨識初始化中…</span>
+        <div class="topbar__actions">
+          <button id="btnOpenGallery" class="icon-btn" aria-label="畫廊" title="畫廊">🖼</button>
+          <button id="btnOpenSettings" class="icon-btn" aria-label="設定" title="設定">⚙</button>
+        </div>
+      </header>
+
+      <footer class="live-footer">
+        <p class="hint">跟隨動作後比出「張開手掌」即可自動存檔,或直接按下方按鈕</p>
+        <button id="btnManualSave" class="save-btn" aria-label="手動存檔">存檔</button>
+      </footer>
+    </section>
+
+    <!-- 3.2 手勢觸發後的回放畫面 Replay Screen -->
+    <section id="screen-replay" class="screen" data-screen="replay">
+      <canvas id="replayCanvas" class="live-canvas"></canvas>
+      <div class="replay-topbar">
+        <span class="badge badge--accent">慢動作回放</span>
+      </div>
+      <div class="progress"><div id="replayProgressFill" class="progress__fill"></div></div>
+      <footer class="replay-footer">
+        <button id="btnReturnNow" class="ghost-btn">立即返回</button>
+      </footer>
+    </section>
+
+    <!-- 3.3 設定畫面 Settings -->
+    <section id="screen-settings" class="screen" data-screen="settings">
+      <header class="panel-header">
+        <button class="back-btn" data-back>‹</button>
+        <h1>設定</h1>
+      </header>
+      <div class="panel-body">
+
+        <label class="field">
+          <div class="field__row">
+            <span>延遲秒數</span>
+            <span id="delaySecVal" class="field__value">5 秒</span>
+          </div>
+          <input id="delaySec" type="range" min="1" max="30" step="1" value="5" />
+          <p class="field__desc">主畫面持續延遲顯示的秒數</p>
+        </label>
+
+        <label class="field">
+          <div class="field__row">
+            <span>回溯存檔範圍</span>
+            <span id="backtrackSecVal" class="field__value">8 秒</span>
+          </div>
+          <input id="backtrackSec" type="range" min="3" max="30" step="1" value="8" />
+          <p class="field__desc">比手勢時,往回存多少秒的內容</p>
+        </label>
+
+        <div class="field field--row">
+          <span>垂直參考線</span>
+          <input id="guideV" type="checkbox" checked />
+        </div>
+        <div class="field field--row">
+          <span>水平參考線</span>
+          <input id="guideH" type="checkbox" checked />
+        </div>
+
+        <label class="field">
+          <span>慢動作回放速度</span>
+          <select id="slowMoRate">
+            <option value="1">1x</option>
+            <option value="0.5" selected>1/2x</option>
+            <option value="0.25">1/4x</option>
+          </select>
+        </label>
+
+        <label class="field">
+          <span>慣用手 / 偵測區位置</span>
+          <select id="dominantHand">
+            <option value="right" selected>右</option>
+            <option value="left">左</option>
+          </select>
+          <p class="field__desc">決定手勢偵測區顯示在畫面左下角或右下角</p>
+        </label>
+
+      </div>
+    </section>
+
+    <!-- 3.4 存檔清單/畫廊畫面 Gallery -->
+    <section id="screen-gallery" class="screen" data-screen="gallery">
+      <header class="panel-header">
+        <button class="back-btn" data-back>‹</button>
+        <h1>畫廊</h1>
+      </header>
+      <div class="panel-body">
+        <div id="galleryEmpty" class="gallery-empty hidden">尚未有存檔片段</div>
+        <div id="galleryList" class="gallery-list"></div>
+      </div>
+    </section>
+
+    <!-- fullscreen clip player, opened from Gallery -->
+    <section id="screen-player" class="screen" data-screen="player">
+      <header class="panel-header">
+        <button class="back-btn" data-back-player>‹</button>
+        <h1 id="playerTitle">播放</h1>
+      </header>
+      <video id="playerVideo" class="player-video" controls playsinline></video>
+      <div class="panel-body">
+        <label class="field field--row">
+          <span>慢動作播放</span>
+          <input id="playerSlowMo" type="checkbox" />
+        </label>
+        <div class="player-actions">
+          <a id="btnDownloadClip" class="ghost-btn" download>下載 / 分享</a>
+          <button id="btnDeleteClip" class="ghost-btn ghost-btn--danger">刪除</button>
+        </div>
+      </div>
+    </section>
+
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+</div>
+
+<script type="module" src="src/app.js"></script>
+</body>
+</html>
