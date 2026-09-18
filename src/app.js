@@ -11,6 +11,7 @@ import { clipFilename, formatDuration, formatClock } from './utils.js';
 const $ = (sel) => document.querySelector(sel);
 
 const camSource = $('#camSource');
+const pipVideo = $('#pipVideo');
 const liveCanvas = $('#liveCanvas');
 const replayCanvas = $('#replayCanvas');
 const warmupEl = $('#warmup');
@@ -63,7 +64,6 @@ delayRenderer.onWarmupChange = (remaining) => {
 };
 
 const gestureEngine = new GestureEngine({
-  getSettings: () => settingsStore.get(),
   onGesture: () => triggerSave(),
   onStatusChange: (text, tone) => {
     gestureBadge.textContent = text;
@@ -105,6 +105,13 @@ function applyBufferWindow(settings) {
   frameBuffer.setMaxAgeMs(maxAgeMs);
 }
 
+// The live PiP preview sits in the corner opposite the dominant hand, so
+// raising that hand to gesture doesn't cover it.
+function applyPipPosition(settings) {
+  pipVideo.classList.toggle('pip-video--right', settings.dominantHand === 'left');
+  pipVideo.classList.toggle('pip-video--left', settings.dominantHand !== 'left');
+}
+
 function populateSettingsInputs(settings) {
   inputs.delaySec.value = settings.delaySec;
   inputs.delaySecVal.textContent = `${settings.delaySec} 秒`;
@@ -132,6 +139,7 @@ function onSettingsChanged() {
   settingsStore.set(next);
   saveSettings(settingsStore.get());
   applyBufferWindow(settingsStore.get());
+  applyPipPosition(settingsStore.get());
   inputs.delaySecVal.textContent = `${next.delaySec} 秒`;
   inputs.backtrackSecVal.textContent = `${next.backtrackSec} 秒`;
 }
@@ -144,6 +152,7 @@ Object.values(inputs).forEach((el) => {
 
 populateSettingsInputs(settingsStore.get());
 applyBufferWindow(settingsStore.get());
+applyPipPosition(settingsStore.get());
 
 // ---------- app state machine ----------
 function setAppState(next) {
@@ -272,7 +281,9 @@ async function initCamera() {
       audio: false,
     });
     camSource.srcObject = stream;
+    pipVideo.srcObject = stream;
     await camSource.play();
+    await pipVideo.play();
   } catch (err) {
     console.error('[camera] failed', err);
     toast('無法取得相機權限,請允許相機存取後重新整理', 5000);

@@ -1,7 +1,10 @@
-// Gesture trigger (spec 2.2 / 5.3 / 9.1): watches a fixed corner ROI of the
+// Gesture trigger (spec 2.2 / 5.3 / 9.1): watches the WHOLE frame of the
 // LIVE (undelayed) camera feed for an open-hand gesture and fires onGesture()
 // once it has been stable for ~0.3-0.5s, per the 9.1 review note that a
 // single-frame hit is too easy to false-trigger while handling equipment.
+// (An earlier version restricted detection to a fixed corner ROI per spec
+// 3.3/5.3, but that made the gesture awkward to land reliably in practice -
+// full-frame detection is more forgiving about hand position.)
 //
 // Uses MediaPipe's GestureRecognizer (Open_Palm category) as a robust stand-in
 // for "五指張開" (open/spread hand) - MediaPipe does not ship a bespoke
@@ -11,8 +14,6 @@
 // network policy blocks it - gesture recognition simply stays unavailable
 // and the manual save button remains the fallback, exactly as spec 3.1
 // describes for "手勢辨識失敗時的備援".
-
-import { roiRect } from './delayRenderer.js';
 
 const VISION_BUNDLE_URL = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs';
 const WASM_BASE_URL = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm';
@@ -24,16 +25,13 @@ const MIN_SCORE = 0.6;
 const COOLDOWN_MS = 3000; // spec 5.3: cool-down so one gesture isn't counted twice
 
 export class GestureEngine {
-  constructor({ getSettings, onGesture, onStatusChange }) {
-    this.getSettings = getSettings;
+  constructor({ onGesture, onStatusChange }) {
     this.onGesture = onGesture;
     this.onStatusChange = onStatusChange;
     this.available = false;
     this.enabled = false; // whether the detection loop should currently run
     this._recognizer = null;
     this._video = null;
-    this._roiCanvas = document.createElement('canvas');
-    this._roiCtx = this._roiCanvas.getContext('2d');
     this._timer = null;
     this._streakStart = 0;
     this._lastFireAt = 0;
@@ -88,20 +86,9 @@ export class GestureEngine {
     if (!this._recognizer || !this._video || this._video.readyState < 2) return;
     if (this._locked) return;
 
-    const video = this._video;
-    const settings = this.getSettings();
-    const box = roiRect(video.videoWidth, video.videoHeight, settings.dominantHand);
-    this._roiCanvas.width = Math.max(1, Math.round(box.w));
-    this._roiCanvas.height = Math.max(1, Math.round(box.h));
-    this._roiCtx.drawImage(
-      video,
-      box.x, box.y, box.w, box.h,
-      0, 0, this._roiCanvas.width, this._roiCanvas.height
-    );
-
     let result;
     try {
-      result = this._recognizer.recognizeForVideo(this._roiCanvas, performance.now());
+      result = this._recognizer.recognizeForVideo(this._video, performance.now());
     } catch (err) {
       return; // transient decode hiccup, just skip this tick
     }

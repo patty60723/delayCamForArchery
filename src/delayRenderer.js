@@ -1,5 +1,9 @@
 // Draws the "N seconds ago" buffered frame onto the live canvas, plus the
-// reference guide lines and the gesture ROI box (spec 2.1 / 3.1).
+// reference guide lines (spec 2.1 / 3.1). Gesture detection now scans the
+// whole frame (see gestureEngine.js) rather than a fixed corner ROI, so there
+// is no ROI box to draw here anymore.
+
+import { drawCover } from './utils.js';
 
 export class DelayRenderer {
   constructor(canvasEl, frameBuffer, getSettings) {
@@ -61,9 +65,8 @@ export class DelayRenderer {
     }
     this._setWarmup(null);
 
-    ctx.drawImage(frame.canvas, 0, 0, W, H);
+    drawCover(ctx, frame.canvas, frame.canvas.width, frame.canvas.height, W, H);
     this._drawGuides(ctx, W, H, settings);
-    this._drawRoiBox(ctx, W, H, settings);
   }
 
   _setWarmup(remaining) {
@@ -90,25 +93,4 @@ export class DelayRenderer {
     }
     ctx.restore();
   }
-
-  _drawRoiBox(ctx, W, H, settings) {
-    const box = roiRect(W, H, settings.dominantHand);
-    ctx.save();
-    ctx.strokeStyle = 'rgba(255,122,26,0.8)';
-    ctx.lineWidth = 2;
-    ctx.setLineDash([6, 6]);
-    ctx.strokeRect(box.x, box.y, box.w, box.h);
-    ctx.restore();
-  }
-}
-
-// Gesture ROI: a fixed corner box, bottom-left or bottom-right depending on
-// dominant hand (spec 3.3 / 4).
-export function roiRect(W, H, dominantHand) {
-  const w = W * 0.32;
-  const h = H * 0.28;
-  const margin = W * 0.04;
-  const x = dominantHand === 'left' ? margin : W - margin - w;
-  const y = H - margin - h;
-  return { x, y, w, h };
 }

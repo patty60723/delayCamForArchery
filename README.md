@@ -28,10 +28,11 @@ npx serve .
 | --- | --- | --- |
 | 常駐延遲畫面 (2.1) | 60fps 短片段檔案循環覆寫 + 串接 | 相機畫面持續取樣進記憶體 ring buffer(~15fps、384×216),畫面 canvas 直接畫出「N 秒前」的那一張 |
 | 回溯存檔 (2.2 步驟1) | 串接 buffer 片段輸出 MP4 (MediaCodec/MediaMuxer) | 立即從記憶體 buffer 播放慢動作回放(不需等待編碼);背景同時用 `canvas.captureStream()+MediaRecorder` 產生 WebM 存進畫廊 |
-| 手勢辨識 (2.2 / 5.3) | MediaPipe Hands,自訂「五指張開」判斷 | MediaPipe **GestureRecognizer**(Web/WASM 版)的內建 `Open_Palm` 類別做為「張開手掌」的替代判斷,並加入 9.1 提到的 0.35 秒穩定觸發門檻與 3 秒冷卻。WASM 與模型從 Google 官方 CDN 於執行時下載;離線或網路受限時會自動降級為「僅手動按鈕」,不會讓 App 壞掉(這也正是規格 3.1 所說手勢辨識失敗時的備援設計) |
+| 手勢辨識 (2.2 / 5.3) | MediaPipe Hands,固定角落 ROI,自訂「五指張開」判斷 | MediaPipe **GestureRecognizer**(Web/WASM 版)的內建 `Open_Palm` 類別做為「張開手掌」的替代判斷,並加入 9.1 提到的 0.35 秒穩定觸發門檻與 3 秒冷卻。**改為偵測全畫面而非固定角落 ROI**(實測角落 ROI 太小、手勢很難準確落在裡面比出來,全畫面辨識容錯高很多)。WASM 與模型從 Google 官方 CDN 於執行時下載;離線或網路受限時會自動降級為「僅手動按鈕」,不會讓 App 壞掉(這也正是規格 3.1 所說手勢辨識失敗時的備援設計) |
 | 手動存檔按鈕 (3.1) | 有 | 有,行為與手勢觸發共用同一條存檔/回放流程 |
 | 回放期間忽略新觸發 (2.2) | 有 | 有,以 `appState` 狀態機(LIVE/SAVING/REPLAY)保證 |
-| 慣用手切換 (3.3/4) | 切換偵測區左右 | 切換偵測區左右(畫在 canvas 上的 ROI 方框) |
+| 即時小視窗 (新增,非規格原有項目) | 無 | 主畫面左上/右上角疊加一個小的即時(無延遲)相機畫面,方便使用者確認當下鏡頭真的有拍到自己,不用等延遲畫面才看到 |
+| 慣用手切換 (3.3/4) | 切換偵測區左右 | 手勢改為全畫面偵測後,這個設定改為切換**即時小視窗**顯示在左上或右上角,盡量避開比手勢的那隻手 |
 | 儲存 (6) | MediaStore 永久資料夾 | IndexedDB(瀏覽器沙盒儲存,無法真的存進手機相簿;下載/分享用瀏覽器下載連結代替) |
 | App 背景/中斷行為 (9.1 未定事項) | 未定 | 本 prototype 選擇的具體策略:切到背景時暫停取樣與辨識,回到前景後清空 buffer、重新累積(畫面會重新出現「準備延遲畫面…」倒數) |
 | 儲存失敗提示 (9.2) | 未定 | 已補上:編碼/存檔失敗會跳出 toast 提示,不會讓使用者誤以為已存檔 |
@@ -43,8 +44,8 @@ index.html            四個畫面(Live / Replay / Settings / Gallery / Player)�
 style.css             所有畫面樣式
 src/state.js          設定預設值、App 狀態與畫面列舉、極簡 pub/sub store
 src/frameBuffer.js     持續取樣相機畫面的 ring buffer(對應 2.1 / 5.2)
-src/delayRenderer.js   畫出「N 秒前」畫面 + 參考線 + 手勢 ROI 方框(對應 2.1 / 3.1 / 3.3)
-src/gestureEngine.js   MediaPipe GestureRecognizer 包裝 + 穩定觸發門檻 + 手動備援(對應 2.2 / 5.3 / 9.1)
+src/delayRenderer.js   畫出「N 秒前」畫面 + 參考線(對應 2.1 / 3.1)
+src/gestureEngine.js   MediaPipe GestureRecognizer 包裝(全畫面偵測)+ 穩定觸發門檻 + 手動備援(對應 2.2 / 5.3 / 9.1)
 src/clipRecorder.js    立即慢動作回放 + 背景輸出 WebM(對應 2.2 / 3.2)
 src/galleryStore.js    IndexedDB 存取(對應 3.4 / 6)
 src/settingsStore.js   設定持久化(localStorage)

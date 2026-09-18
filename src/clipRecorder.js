@@ -6,6 +6,8 @@
 //    reflects the true real-time footage (slow-mo is then just a playback
 //    rate applied when viewing it, in the live replay and again in Gallery).
 
+import { drawCover } from './utils.js';
+
 function pickMimeType() {
   const candidates = [
     'video/webm;codecs=vp9',
@@ -39,7 +41,7 @@ export function playFrames(canvas, frames, rate, { onProgress, cancel } = {}) {
       if (cancel && cancel.requested) return resolve();
       if (i >= frames.length) return resolve();
       const f = frames[i];
-      ctx.drawImage(f.canvas, 0, 0, canvas.width, canvas.height);
+      drawCover(ctx, f.canvas, f.canvas.width, f.canvas.height, canvas.width, canvas.height);
       if (onProgress) onProgress((f.ts - frames[0].ts) / totalSpan);
       const next = frames[i + 1];
       i += 1;
@@ -71,7 +73,7 @@ export function encodeClip(frames, { width = 480, height = 270 } = {}) {
     canvas.width = width;
     canvas.height = height;
     const ctx = canvas.getContext('2d');
-    ctx.drawImage(frames[0].canvas, 0, 0, width, height);
+    drawCover(ctx, frames[0].canvas, frames[0].canvas.width, frames[0].canvas.height, width, height);
 
     const stream = canvas.captureStream(15);
     const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 1_500_000 });
@@ -91,7 +93,7 @@ export function encodeClip(frames, { width = 480, height = 270 } = {}) {
         return;
       }
       const f = frames[i];
-      ctx.drawImage(f.canvas, 0, 0, width, height);
+      drawCover(ctx, f.canvas, f.canvas.width, f.canvas.height, width, height);
       const next = frames[i + 1];
       i += 1;
       if (!next) {

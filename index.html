@@ -19,6 +19,8 @@
     <section id="screen-live" class="screen screen--active" data-screen="live">
       <canvas id="liveCanvas" class="live-canvas"></canvas>
 
+      <video id="pipVideo" class="pip-video pip-video--left" playsinline muted autoplay></video>
+
       <div id="warmup" class="warmup hidden">
         <div class="warmup__spinner"></div>
         <p class="warmup__text">準備延遲畫面…<span id="warmupCount">5</span> 秒</p>
@@ -95,12 +97,12 @@
         </label>
 
         <label class="field">
-          <span>慣用手 / 偵測區位置</span>
+          <span>慣用手</span>
           <select id="dominantHand">
             <option value="right" selected>右</option>
             <option value="left">左</option>
           </select>
-          <p class="field__desc">決定手勢偵測區顯示在畫面左下角或右下角</p>
+          <p class="field__desc">手勢辨識已改為偵測全畫面;這個設定只決定即時小視窗顯示在畫面左上或右上角,避免被比手勢的那隻手擋住</p>
         </label>
 
       </div>

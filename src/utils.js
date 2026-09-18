@@ -23,3 +23,22 @@ export function formatClock(ts) {
   return `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
 }
 
+// Draws `source` (image/video/canvas) into the ctx's destW x destH area with
+// object-fit: cover semantics - crop to the destination's aspect ratio
+// instead of stretching, so a 16:9 buffered frame doesn't get squashed into
+// a tall portrait phone screen (or vice versa).
+export function drawCover(ctx, source, srcW, srcH, destW, destH) {
+  if (!srcW || !srcH || !destW || !destH) return;
+  const srcRatio = srcW / srcH;
+  const destRatio = destW / destH;
+  let sx = 0, sy = 0, sw = srcW, sh = srcH;
+  if (srcRatio > destRatio) {
+    sw = srcH * destRatio;
+    sx = (srcW - sw) / 2;
+  } else {
+    sh = srcW / destRatio;
+    sy = (srcH - sh) / 2;
+  }
+  ctx.drawImage(source, sx, sy, sw, sh, 0, 0, destW, destH);
+}
+

@@ -74,6 +74,22 @@ body {
   background: #05070a;
 }
 
+/* small real-time preview, opposite corner from the dominant hand */
+.pip-video {
+  position: absolute;
+  top: 78px;
+  width: 30%;
+  aspect-ratio: 3 / 4;
+  object-fit: cover;
+  border-radius: 12px;
+  border: 2px solid rgba(255,255,255,0.7);
+  box-shadow: 0 6px 16px rgba(0,0,0,0.5);
+  z-index: 5;
+  background: #000;
+}
+.pip-video--left { left: 12px; }
+.pip-video--right { right: 12px; }
+
 .warmup {
   position: absolute;
   inset: 0;
