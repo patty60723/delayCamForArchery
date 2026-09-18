@@ -31,7 +31,9 @@ body {
 
 .phone {
   position: relative;
-  width: min(400px, 94vw);
+  /* fit inside the viewport on whichever axis is tighter, so a landscape
+     window/rotated phone doesn't push the top bar and controls off-screen */
+  width: min(400px, 94vw, calc(92vh * 9 / 19.5));
   aspect-ratio: 9 / 19.5;
   background: var(--phone-bg);
   border-radius: var(--radius);
@@ -140,6 +142,10 @@ body {
   border-radius: 999px;
   background: rgba(20,23,28,0.75);
   color: var(--text-dim);
+  max-width: 55%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .badge--ok { color: var(--ok); }
 .badge--muted { color: var(--text-dim); }

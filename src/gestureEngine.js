@@ -54,7 +54,7 @@ export class GestureEngine {
     } catch (err) {
       console.warn('[gestureEngine] unavailable, falling back to manual button only:', err);
       this.available = false;
-      this._status('手勢辨識未啟用,請用手動存檔按鈕', 'muted');
+      this._status('手勢辨識未啟用(用手動按鈕)', 'muted');
     }
   }
 
