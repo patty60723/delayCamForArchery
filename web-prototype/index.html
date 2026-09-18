@@ -27,15 +27,19 @@
       </div>
 
       <header class="topbar">
-        <span id="gestureBadge" class="badge badge--muted">手勢辨識初始化中…</span>
+        <div class="topbar__status">
+          <span id="gestureBadge" class="badge badge--muted">手勢辨識初始化中…</span>
+          <span id="recBadge" class="badge badge--rec hidden">⏺ REC <span id="recElapsed">00:00</span></span>
+        </div>
         <div class="topbar__actions">
+          <button id="btnToggleRecord" class="icon-btn" aria-label="連續錄影" title="連續錄影">⏺</button>
           <button id="btnOpenGallery" class="icon-btn" aria-label="畫廊" title="畫廊">🖼</button>
           <button id="btnOpenSettings" class="icon-btn" aria-label="設定" title="設定">⚙</button>
         </div>
       </header>
 
       <footer class="live-footer">
-        <p class="hint">跟隨動作後比出「張開手掌」即可自動存檔,或直接按下方按鈕</p>
+        <p class="hint">跟隨動作後比出「張開手掌」即可自動存檔;比「讚」開始/停止連續錄影,不用每箭都比</p>
         <button id="btnManualSave" class="save-btn" aria-label="手動存檔">存檔</button>
       </footer>
     </section>

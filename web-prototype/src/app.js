@@ -3,9 +3,10 @@ import { FrameBuffer, MARGIN_SEC } from './frameBuffer.js';
 import { DelayRenderer } from './delayRenderer.js';
 import { GestureEngine } from './gestureEngine.js';
 import { playFrames, encodeClip } from './clipRecorder.js';
+import { ContinuousRecorder } from './continuousRecorder.js';
 import { GalleryStore } from './galleryStore.js';
 import { loadSettings, saveSettings } from './settingsStore.js';
-import { clipFilename, formatDuration, formatClock } from './utils.js';
+import { clipFilename, sessionFilename, formatDuration, formatElapsed, formatClock, drawCover } from './utils.js';
 
 // ---------- element refs ----------
 const $ = (sel) => document.querySelector(sel);
@@ -17,6 +18,9 @@ const replayCanvas = $('#replayCanvas');
 const warmupEl = $('#warmup');
 const warmupCountEl = $('#warmupCount');
 const gestureBadge = $('#gestureBadge');
+const recBadge = $('#recBadge');
+const recElapsedEl = $('#recElapsed');
+const btnToggleRecord = $('#btnToggleRecord');
 const btnManualSave = $('#btnManualSave');
 const btnOpenGallery = $('#btnOpenGallery');
 const btnOpenSettings = $('#btnOpenSettings');
@@ -65,10 +69,82 @@ delayRenderer.onWarmupChange = (remaining) => {
 
 const gestureEngine = new GestureEngine({
   onGesture: () => triggerSave(),
+  onToggleRecord: () => toggleContinuousRecording(),
   onStatusChange: (text, tone) => {
     gestureBadge.textContent = text;
     gestureBadge.className = `badge badge--${tone}`;
   },
+});
+
+// ---------- continuous recording ----------
+// "Just film the whole session" alternative to gesturing/pressing save for
+// every single arrow (user feedback after trying another delay-cam app).
+// Independent of the LIVE/SAVING/REPLAY state machine below - it keeps
+// running through per-shot saves/replays and isn't paused when the tab is
+// backgrounded (unlike the delay buffer/gesture loop), since a session
+// recording shouldn't silently stop just because the screen dimmed.
+let continuousRecorder = null;
+let recTimerInterval = null;
+let recThumbnail = null;
+
+function updateRecBadge() {
+  const recording = !!continuousRecorder && continuousRecorder.isRecording;
+  recBadge.classList.toggle('hidden', !recording);
+  btnToggleRecord.classList.toggle('icon-btn--active', recording);
+  btnToggleRecord.textContent = recording ? '⏹' : '⏺';
+  if (recording) recElapsedEl.textContent = formatElapsed(continuousRecorder.elapsedMs);
+}
+
+async function toggleContinuousRecording() {
+  if (!camSource.srcObject) {
+    toast('相機尚未就緒,請稍後再試');
+    return;
+  }
+  if (!continuousRecorder) continuousRecorder = new ContinuousRecorder(camSource.srcObject);
+
+  if (continuousRecorder.isRecording) {
+    clearInterval(recTimerInterval);
+    recTimerInterval = null;
+    const durationMs = continuousRecorder.elapsedMs;
+    try {
+      const blob = await continuousRecorder.stop();
+      const createdAt = Date.now();
+      const filename = sessionFilename(new Date(createdAt));
+      await gallery.addClip({ filename, createdAt, durationMs, blob, thumbnail: recThumbnail });
+      toast(`已存檔:${filename}`);
+    } catch (err) {
+      console.error('[continuous record] failed', err);
+      toast('存檔失敗:儲存空間不足或裝置不支援錄影,請清理空間後再試');
+    }
+    updateRecBadge();
+    return;
+  }
+
+  try {
+    const thumbCanvas = document.createElement('canvas');
+    thumbCanvas.width = 160;
+    thumbCanvas.height = 90;
+    drawCover(thumbCanvas.getContext('2d'), camSource, camSource.videoWidth, camSource.videoHeight, 160, 90);
+    recThumbnail = thumbCanvas.toDataURL('image/jpeg', 0.7);
+
+    continuousRecorder.start();
+    recTimerInterval = setInterval(updateRecBadge, 1000);
+    updateRecBadge();
+    toast('開始連續錄影');
+  } catch (err) {
+    console.error('[continuous record] start failed', err);
+    toast('無法開始錄影:裝置不支援錄影');
+  }
+}
+
+btnToggleRecord.addEventListener('click', () => toggleContinuousRecording());
+
+// Don't let a page close/refresh silently throw away an in-progress recording.
+window.addEventListener('beforeunload', (e) => {
+  if (continuousRecorder && continuousRecorder.isRecording) {
+    e.preventDefault();
+    e.returnValue = '';
+  }
 });
 
 // ---------- toast ----------

@@ -8,7 +8,7 @@
 
 import { drawCover } from './utils.js';
 
-function pickMimeType() {
+export function pickMimeType() {
   const candidates = [
     'video/webm;codecs=vp9',
     'video/webm;codecs=vp8',
