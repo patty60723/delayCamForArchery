@@ -8,6 +8,7 @@ import androidx.core.net.toUri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.archery.delaycam.camera.ClipExporter
+import com.archery.delaycam.camera.ContinuousRecordingSession
 import com.archery.delaycam.camera.DelayedPlaybackController
 import com.archery.delaycam.camera.RollingSegmentRecorder
 import com.archery.delaycam.camera.SegmentBuffer
@@ -19,6 +20,7 @@ import com.archery.delaycam.settings.AppSettings
 import com.archery.delaycam.settings.SettingsRepository
 import com.archery.delaycam.state.AppState
 import com.archery.delaycam.util.clipDisplayName
+import com.archery.delaycam.util.sessionDisplayName
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
@@ -63,6 +65,12 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
     private val _galleryClips = MutableStateFlow<List<ClipEntry>>(emptyList())
     val galleryClips: StateFlow<List<ClipEntry>> = _galleryClips.asStateFlow()
 
+    private val _isContinuousRecording = MutableStateFlow(false)
+    val isContinuousRecording: StateFlow<Boolean> = _isContinuousRecording.asStateFlow()
+
+    private val _recordingElapsedSec = MutableStateFlow(0)
+    val recordingElapsedSec: StateFlow<Int> = _recordingElapsedSec.asStateFlow()
+
     val livePlayer: ExoPlayer = ExoPlayer.Builder(application).build()
     val replayPlayer: ExoPlayer = ExoPlayer.Builder(application).build()
 
@@ -76,8 +84,13 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
         exoPlayer = livePlayer,
         getDelaySecMs = { settings.value.delaySec * 1000L },
     )
+    private val continuousRecordingSession = ContinuousRecordingSession(application)
 
-    val gestureEngine = GestureEngine(application, onGesture = ::triggerSave)
+    val gestureEngine = GestureEngine(
+        application,
+        onGesture = ::triggerSave,
+        onToggleRecord = ::toggleContinuousRecording,
+    )
 
     /**
      * Persistent Preview use case for the PiP window. Lives here (not in
@@ -100,6 +113,7 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
         }
         viewModelScope.launch { refreshGallery() }
         viewModelScope.launch { warmupTicker() }
+        viewModelScope.launch { recordingElapsedTicker() }
 
         // Model load happens once here (not per-screen-visit) so navigating
         // back to Live doesn't re-init and leak a second recognizer.
@@ -144,6 +158,9 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
         if (_appState.value == AppState.LIVE) {
             delayedPlayback.onSegmentFinalized(segment)
         }
+        if (_isContinuousRecording.value) {
+            viewModelScope.launch { continuousRecordingSession.appendSegment(segment) }
+        }
     }
 
     private suspend fun warmupTicker() {
@@ -159,6 +176,51 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
                 }
             }
             delay(300)
+        }
+    }
+
+    private suspend fun recordingElapsedTicker() {
+        while (viewModelScope.isActive) {
+            if (_isContinuousRecording.value) {
+                _recordingElapsedSec.value = (continuousRecordingSession.elapsedMs / 1000).toInt()
+            }
+            delay(1000)
+        }
+    }
+
+    /**
+     * Manual button and gesture (Thumb_Up) trigger share this one path.
+     * "Just film the whole session" alternative to per-shot save - added on
+     * user feedback, ported from the web prototype's app.js. Deliberately
+     * independent of the LIVE/SAVING/REPLAY state machine (no appState
+     * guard here, unlike triggerSave): starting/stopping a session recording
+     * should keep working through per-shot saves and replays.
+     */
+    fun toggleContinuousRecording() {
+        if (_isContinuousRecording.value) {
+            viewModelScope.launch {
+                val displayName = sessionDisplayName()
+                try {
+                    continuousRecordingSession.stop(displayName)
+                    _toast.value = "已存檔:$displayName"
+                    refreshGallery()
+                } catch (e: Exception) {
+                    _toast.value = "存檔失敗:${e.message ?: "未知錯誤,請確認儲存空間是否足夠"}"
+                } finally {
+                    _isContinuousRecording.value = false
+                    _recordingElapsedSec.value = 0
+                }
+            }
+        } else {
+            viewModelScope.launch {
+                try {
+                    continuousRecordingSession.start()
+                    _isContinuousRecording.value = true
+                    _toast.value = "開始連續錄影"
+                } catch (e: Exception) {
+                    _toast.value = "無法開始錄影:${e.message ?: "未知錯誤"}"
+                }
+            }
         }
     }
 
@@ -233,6 +295,7 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
     override fun onCleared() {
         rollingRecorder.stop()
         gestureEngine.close()
+        continuousRecordingSession.releaseImmediate()
         livePlayer.release()
         replayPlayer.release()
         super.onCleared()

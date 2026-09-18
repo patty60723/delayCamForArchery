@@ -117,7 +117,17 @@ private fun ClipCard(clip: ClipEntry, onClick: () -> Unit) {
 
 private fun clipSubtitle(clip: ClipEntry): String {
     val time = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(clip.addedAtMs))
-    val seconds = clip.durationMs / 1000.0
-    return "$time · ${"%.1f".format(seconds)}s"
+    return "$time · ${formatClipDuration(clip.durationMs)}"
+}
+
+// Per-shot clips are a few seconds ("4.2s"); continuous-recording sessions
+// (see ContinuousRecordingSession.kt) can run many minutes, where that
+// format stops being readable, so switch to mm:ss past one minute.
+private fun formatClipDuration(ms: Long): String {
+    if (ms < 60_000) return "${"%.1f".format(ms / 1000.0)}s"
+    val totalSec = ms / 1000
+    val mm = (totalSec / 60).toString().padStart(2, '0')
+    val ss = (totalSec % 60).toString().padStart(2, '0')
+    return "$mm:$ss"
 }
 

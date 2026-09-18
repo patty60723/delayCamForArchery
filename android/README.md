@@ -45,6 +45,12 @@ GestureRecognizer 全畫面手勢辨識、MediaMuxer 存檔匯出、MediaStore �
    U/V 平面 `pixelStride == 1`,多數裝置沒問題但不保證每台都這樣;如果手勢辨識完全
    抓不到手(而非只是不準),換成有考慮 pixelStride 的轉換法。
 
+5. **`camera/ContinuousRecordingSession.kt`**(連續錄影)— 做法是重用同一顆
+   rolling buffer 的片段,錄影期間每個片段一 finalize 就即時 append 進同一支還沒
+   關閉的 `MediaMuxer`,跟 `ClipExporter` 同樣的串接邏輯只是拆成一段一段做,所以
+   風險跟第 2 點是同一類(關鍵幀沒對齊)。此外用 `Mutex` 序列化 append/stop 呼叫
+   避免併發寫壞 muxer 狀態,這個序列化邏輯本身也還沒有實機測過。
+
 ## 建置步驟
 
 1. 用 Android Studio 開啟 `android/` 這個資料夾(不是整個 repo 根目錄)。
@@ -61,14 +67,15 @@ GestureRecognizer 全畫面手勢辨識、MediaMuxer 存檔匯出、MediaStore �
 | --- | --- |
 | `camera/RollingSegmentRecorder.kt` + `SegmentBuffer.kt` | 2.1 / 5.2 常駐延遲緩衝 |
 | `camera/DelayedPlaybackController.kt` | 2.1 / 5.2 延遲鏡子播放 |
-| `camera/ClipExporter.kt` | 2.2 步驟1 / 6 回溯存檔與檔案管理 |
-| `gesture/GestureEngine.kt` | 2.2 / 5.3 / 9.1 全畫面手勢辨識、穩定門檻、冷卻 |
-| `ui/live/LiveScreen.kt` | 3.1 主畫面 + 即時小視窗 PiP |
+| `camera/ClipExporter.kt` + `MediaStoreExport.kt` | 2.2 步驟1 / 6 回溯存檔與檔案管理 |
+| `camera/ContinuousRecordingSession.kt` | 連續錄影開關(新增,非規格原有項目) |
+| `gesture/GestureEngine.kt` | 2.2 / 5.3 / 9.1 全畫面手勢辨識(張開手掌存檔 + 讚連續錄影兩個獨立手勢)、穩定門檻、冷卻 |
+| `ui/live/LiveScreen.kt` | 3.1 主畫面 + 即時小視窗 PiP + REC 錄影提示 |
 | `ui/replay/ReplayScreen.kt` | 3.2 慢動作回放畫面 |
 | `ui/settings/SettingsScreen.kt` + `settings/*` | 3.3 / 4 設定畫面與項目 |
 | `ui/gallery/GalleryScreen.kt` + `PlayerScreen.kt` | 3.4 畫廊 |
 | `ui/DelayCamViewModel.kt` | 2.2 LIVE/SAVING/REPLAY 狀態機,串起以上所有模組 |
 
-手勢改成全畫面偵測(而非固定角落 ROI)、以及主畫面加即時小視窗 PiP,都是照使用者
-在網頁版 prototype 測試後給的回饋帶過來的設計決定,不是規格書原文,細節說明見
-[`../web-prototype/README.md`](../web-prototype/README.md) 的對照表。
+手勢改成全畫面偵測(而非固定角落 ROI)、主畫面加即時小視窗 PiP、以及連續錄影開關,
+都是照使用者在網頁版 prototype 測試後給的回饋帶過來的設計決定,不是規格書原文,
+細節說明見 [`../web-prototype/README.md`](../web-prototype/README.md) 的對照表。

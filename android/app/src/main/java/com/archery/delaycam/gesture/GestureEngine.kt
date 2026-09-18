@@ -22,21 +22,42 @@ private const val STABLE_MS = 350L
 private const val COOLDOWN_MS = 3000L
 private const val MIN_SCORE = 0.6f
 
+private const val SAVE_CATEGORY = "Open_Palm"
+private const val RECORD_TOGGLE_CATEGORY = "Thumb_Up"
+
 /**
- * Full-frame gesture trigger (spec 2.2 / 5.3). An earlier design restricted
- * detection to a fixed corner ROI per spec 3.3/5.3, but the web prototype
- * (gestureEngine.js) switched to scanning the whole frame after finding the
- * corner box too small to reliably land a gesture in - this mirrors that
- * decision natively.
+ * Full-frame gesture triggers (spec 2.2 / 5.3), two independent ones:
  *
- * Uses GestureRecognizer's Open_Palm category as the closest built-in match
- * for "五指張開" (open/spread hand) - MediaPipe ships no bespoke "five"
- * digit-count gesture, same reasoning as the web version.
+ *  - Open_Palm -> per-shot backtrack save (spec 2.2), unchanged from before.
+ *  - Thumb_Up  -> start/stop continuous recording (see
+ *    camera/ContinuousRecordingSession.kt). Added on user feedback (ported
+ *    from the web prototype's gestureEngine.js): doing the save gesture for
+ *    every single arrow got tedious, so this gives a "just film the whole
+ *    session" option that only needs two gestures total.
+ *
+ * An earlier design restricted detection to a fixed corner ROI per spec
+ * 3.3/5.3, but the web prototype found that too small to reliably land a
+ * gesture in - full-frame detection is more forgiving about hand position,
+ * so both gestures here scan the whole frame.
+ *
+ * The two are mutually exclusive per frame (MediaPipe only returns one top
+ * category per inference), so evaluating both against the same result is
+ * enough - no risk of one frame satisfying both at once. The save gesture is
+ * suppressed while `locked` (SAVING/REPLAY, so a stray detection can't
+ * re-trigger mid-replay); the record toggle is deliberately NOT gated by
+ * `locked` - starting/stopping the continuous recording is independent of
+ * the per-shot review flow and should keep working while a replay is on
+ * screen, same as the web version.
+ *
+ * Uses GestureRecognizer's canned categories as the closest built-in match
+ * for "五指張開" (open palm) and a natural "start filming" gesture (thumbs
+ * up) - MediaPipe ships no bespoke digit-count or camera-control gestures,
+ * same reasoning as the web version.
  *
  * Model file is bundled at app/src/main/assets/gesture_recognizer.task (see
  * that folder's README for provenance/refresh instructions). Any init
  * failure - model missing/corrupt, no usable delegate - leaves
- * `available = false`; callers must fall back to the manual save button,
+ * `available = false`; callers must fall back to the manual buttons,
  * exactly as spec 3.1 describes, and this class never throws out of
  * init()/analyze() to the caller.
  *
@@ -49,16 +70,27 @@ private const val MIN_SCORE = 0.6f
 class GestureEngine(
     private val context: Context,
     private val onGesture: () -> Unit,
+    private val onToggleRecord: () -> Unit,
 ) {
     var available: Boolean = false
         private set
 
-    /** Set true while SAVING/REPLAY so a straggling detection can't re-fire mid-replay. */
-    @Volatile var locked: Boolean = false
+    /** Set true while SAVING/REPLAY. Gates the SAVE gesture only - see class doc. */
+    @Volatile
+    var locked: Boolean = false
+        set(value) {
+            field = value
+            if (value) saveState.streakStart = 0L
+        }
 
     private var recognizer: GestureRecognizer? = null
-    private var streakStartMs: Long = 0L
-    private var lastFireAtMs: Long = 0L
+    private val saveState = StreakState()
+    private val recordToggleState = StreakState()
+
+    private class StreakState {
+        var streakStart: Long = 0L
+        var lastFireAt: Long = 0L
+    }
 
     fun init() {
         recognizer = tryCreate(Delegate.GPU) ?: tryCreate(Delegate.CPU)
@@ -82,10 +114,13 @@ class GestureEngine(
         null
     }
 
-    /** Feed one live-camera frame in from an ImageAnalysis.Analyzer. Always closes imageProxy. */
+    /**
+     * Feed one live-camera frame in from an ImageAnalysis.Analyzer. Always
+     * closes imageProxy. Runs regardless of `locked` - see class doc for why.
+     */
     fun analyze(imageProxy: ImageProxy) {
         val r = recognizer
-        if (r == null || locked) {
+        if (r == null) {
             imageProxy.close()
             return
         }
@@ -108,21 +143,29 @@ class GestureEngine(
     }
 
     private fun onResult(result: GestureRecognizerResult, input: MPImage) {
-        if (locked) return
         val top = result.gestures().firstOrNull()?.firstOrNull()
-        val isOpenPalm = top != null && top.categoryName() == "Open_Palm" && top.score() >= MIN_SCORE
         val now = System.currentTimeMillis()
 
-        if (!isOpenPalm) {
-            streakStartMs = 0L
+        if (!locked) {
+            val isSaveGesture = top != null && top.categoryName() == SAVE_CATEGORY && top.score() >= MIN_SCORE
+            evaluate(saveState, isSaveGesture, now, onGesture)
+        }
+
+        val isRecordToggleGesture = top != null && top.categoryName() == RECORD_TOGGLE_CATEGORY && top.score() >= MIN_SCORE
+        evaluate(recordToggleState, isRecordToggleGesture, now, onToggleRecord)
+    }
+
+    private fun evaluate(state: StreakState, matched: Boolean, now: Long, onFire: () -> Unit) {
+        if (!matched) {
+            state.streakStart = 0L
             return
         }
-        if (streakStartMs == 0L) streakStartMs = now
-        val heldFor = now - streakStartMs
-        if (heldFor >= STABLE_MS && now - lastFireAtMs >= COOLDOWN_MS) {
-            lastFireAtMs = now
-            streakStartMs = 0L
-            onGesture()
+        if (state.streakStart == 0L) state.streakStart = now
+        val heldFor = now - state.streakStart
+        if (heldFor >= STABLE_MS && now - state.lastFireAt >= COOLDOWN_MS) {
+            state.lastFireAt = now
+            state.streakStart = 0L
+            onFire()
         }
     }
 

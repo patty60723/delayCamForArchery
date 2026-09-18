@@ -1,13 +1,10 @@
 package com.archery.delaycam.camera
 
-import android.content.ContentValues
 import android.content.Context
 import android.media.MediaCodec
 import android.media.MediaExtractor
-import android.media.MediaFormat
 import android.media.MediaMuxer
 import android.net.Uri
-import android.provider.MediaStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -27,7 +24,8 @@ import java.nio.ByteBuffer
  * if the stop()/start() boundary lands awkwardly. If exported clips glitch
  * at segment joins, that's the first place to look - a more robust (but
  * slower) fallback is decoding + re-encoding through MediaCodec instead of
- * raw sample copying.
+ * raw sample copying. (ContinuousRecordingSession does the same kind of
+ * concatenation incrementally, for the same reason and with the same caveat.)
  */
 object ClipExporter {
 
@@ -40,7 +38,7 @@ object ClipExporter {
         val tempFile = File.createTempFile("archery_export", ".mp4", context.cacheDir)
         try {
             concatenate(segments.map { it.file }, tempFile)
-            saveToMediaStore(context, tempFile, displayName)
+            MediaStoreExport.saveVideoToMediaStore(context, tempFile, displayName)
         } finally {
             tempFile.delete()
         }
@@ -59,7 +57,7 @@ object ClipExporter {
             val extractor = MediaExtractor()
             try {
                 extractor.setDataSource(input.absolutePath)
-                val trackIndex = selectVideoTrack(extractor) ?: continue
+                val trackIndex = MediaStoreExport.selectVideoTrack(extractor) ?: continue
                 extractor.selectTrack(trackIndex)
 
                 if (!muxerStarted) {
@@ -91,34 +89,5 @@ object ClipExporter {
         if (!muxerStarted) throw IOException("none of the segments had a readable video track")
         muxer.stop()
         muxer.release()
-    }
-
-    private fun selectVideoTrack(extractor: MediaExtractor): Int? {
-        for (i in 0 until extractor.trackCount) {
-            val mime = extractor.getTrackFormat(i).getString(MediaFormat.KEY_MIME) ?: continue
-            if (mime.startsWith("video/")) return i
-        }
-        return null
-    }
-
-    private fun saveToMediaStore(context: Context, source: File, displayName: String): Uri {
-        val resolver = context.contentResolver
-        val values = ContentValues().apply {
-            put(MediaStore.Video.Media.DISPLAY_NAME, displayName)
-            put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
-            put(MediaStore.Video.Media.RELATIVE_PATH, "Movies/Archery")
-            put(MediaStore.Video.Media.IS_PENDING, 1)
-        }
-        val uri = resolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values)
-            ?: throw IOException("MediaStore insert() returned null - is storage full?")
-
-        resolver.openOutputStream(uri)?.use { out ->
-            source.inputStream().use { input -> input.copyTo(out) }
-        } ?: throw IOException("could not open output stream for $uri")
-
-        values.clear()
-        values.put(MediaStore.Video.Media.IS_PENDING, 0)
-        resolver.update(uri, values, null, null)
-        return uri
     }
 }

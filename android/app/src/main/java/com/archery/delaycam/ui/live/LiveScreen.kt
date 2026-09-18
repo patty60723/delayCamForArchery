@@ -52,6 +52,8 @@ fun LiveScreen(
     val warmupRemaining by viewModel.warmupRemainingSec.collectAsState()
     val gestureStatus by viewModel.gestureStatus.collectAsState()
     val appState by viewModel.appState.collectAsState()
+    val isRecording by viewModel.isContinuousRecording.collectAsState()
+    val recordingElapsedSec by viewModel.recordingElapsedSec.collectAsState()
 
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
 
@@ -97,16 +99,34 @@ fun LiveScreen(
                 .padding(top = 34.dp, start = 12.dp, end = 12.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            Surface(shape = RoundedCornerShape(999.dp), color = Color.Black.copy(alpha = 0.6f)) {
-                Text(
-                    text = gestureStatus,
-                    color = Color(0xFF9AA1AB),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                )
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Surface(shape = RoundedCornerShape(999.dp), color = Color.Black.copy(alpha = 0.6f)) {
+                    Text(
+                        text = gestureStatus,
+                        color = Color(0xFF9AA1AB),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                    )
+                }
+                if (isRecording) {
+                    Surface(shape = RoundedCornerShape(999.dp), color = MaterialTheme.colorScheme.error) {
+                        Text(
+                            text = "⏺ REC ${formatElapsed(recordingElapsedSec)}",
+                            color = Color.White,
+                            maxLines = 1,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                        )
+                    }
+                }
             }
             Row {
+                IconButton(onClick = { viewModel.toggleContinuousRecording() }) {
+                    Text(
+                        text = if (isRecording) "⏹" else "⏺", // ⏹ / ⏺
+                        color = if (isRecording) MaterialTheme.colorScheme.error else Color.White,
+                    )
+                }
                 IconButton(onClick = onOpenGallery) {
                     Text("🖼", color = Color.White) // 🖼 gallery
                 }
@@ -124,7 +144,7 @@ fun LiveScreen(
         ) {
             Surface(shape = RoundedCornerShape(10.dp), color = Color.Black.copy(alpha = 0.35f)) {
                 Text(
-                    text = "跟隨動作後比出「張開手掌」即可自動存檔,或直接按下方按鈕",
+                    text = "跟隨動作後比出「張開手掌」即可自動存檔;比「讚」開始/停止連續錄影,不用每箭都比",
                     color = Color.White,
                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                 )
@@ -137,6 +157,12 @@ fun LiveScreen(
             ) { Text("存檔") }
         }
     }
+}
+
+private fun formatElapsed(totalSec: Int): String {
+    val mm = (totalSec / 60).toString().padStart(2, '0')
+    val ss = (totalSec % 60).toString().padStart(2, '0')
+    return "$mm:$ss"
 }
 
 @Composable
