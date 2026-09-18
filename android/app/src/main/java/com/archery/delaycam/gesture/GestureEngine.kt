@@ -33,11 +33,12 @@ private const val MIN_SCORE = 0.6f
  * for "五指張開" (open/spread hand) - MediaPipe ships no bespoke "five"
  * digit-count gesture, same reasoning as the web version.
  *
- * REQUIRES `gesture_recognizer.task` bundled at app/src/main/assets/ (see
- * android/README.md for the download URL). Any init failure - missing
- * model, no usable delegate - leaves `available = false`; callers must fall
- * back to the manual save button, exactly as spec 3.1 describes, and this
- * class never throws out of init()/analyze() to the caller.
+ * Model file is bundled at app/src/main/assets/gesture_recognizer.task (see
+ * that folder's README for provenance/refresh instructions). Any init
+ * failure - model missing/corrupt, no usable delegate - leaves
+ * `available = false`; callers must fall back to the manual save button,
+ * exactly as spec 3.1 describes, and this class never throws out of
+ * init()/analyze() to the caller.
  *
  * NOT YET VERIFIED ON DEVICE. The YUV_420_888 -> NV21 conversion below
  * assumes pixelStride == 1 on the U/V planes, true for most devices' CameraX

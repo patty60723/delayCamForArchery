@@ -1,108 +1,29 @@
-# 射箭 Delay Camera — Interactive Prototype
+# 射箭 Delay Camera
 
-一個可在瀏覽器中直接執行、驗證核心體驗的互動式 prototype,對應產品規格書
-「射箭 Delay Camera App — 產品規格書」(第 1–8 節)。目的是在投入 Android 原生
-開發前,先讓射手/利害關係人實際點得到、看得到「延遲鏡子 + 手勢/按鈕存檔 +
-慢動作回放 + 設定 + 畫廊」這條核心流程,不是最終的 Android 產品。
+讓射手獨自練習時,手機立在旁邊持續顯示「幾秒前的自己」——放箭後轉頭一看就能
+立刻檢視動作,不用等教練或賽後回看整支影片。完整產品邏輯見「射箭 Delay
+Camera App — 產品規格書」;這個 repo 目前有兩個部分:
 
-> 若要測「正式版」(原生 Android,效能才是真的):見 [`android/`](android/) 目錄,
-> 那是照規格書用 Kotlin + CameraX + MediaPipe + MediaCodec 寫的專案骨架 —
-> 骨架完整但**完全沒有實際 build/跑過**(這個沙盒環境下載不到 Android SDK),
-> 細節與已知風險見該目錄的 README。
+## [`android/`](android/) — 正式版(Kotlin 原生 App)
 
-## 執行方式
+**這是正確的版本。** Kotlin + Jetpack Compose + CameraX + MediaPipe
+GestureRecognizer + MediaCodec/MediaMuxer,照規格書實作常駐延遲緩衝、手勢/按鈕
+存檔、慢動作回放、設定、畫廊。手勢辨識模型已經包在 repo 裡,不用另外下載。
 
-需要以 HTTP(S) 伺服器開啟(camera API 與 ES module 在 `file://` 下無法正常運作),
-在專案根目錄執行任一種靜態伺服器,例如:
+⚠️ 骨架完整,但目前**還沒有在真正的 Android SDK / 裝置上 build 或跑過一次**
+(寫這份骨架的環境下載不到 Android SDK)——在 Android Studio 裡開起來、裝到
+Pixel 9 之前,請先讀 [`android/README.md`](android/README.md),裡面列了目前
+做過的驗證範圍,以及最可能需要除錯的幾個地方(片段錄影銜接、MediaMuxer 串接、
+延遲播放清單、YUV 轉換)。
 
-```bash
-python3 -m http.server 8000
-# 或
-npx serve .
-```
+## [`web-prototype/`](web-prototype/) — 開發用網頁 prototype(非正式版)
 
-再以 **Chrome / Edge**(需要相機權限,建議 desktop 或 Android 版)開啟
-`http://localhost:8000/`。手機瀏覽器需以 HTTPS 或 `localhost` 存取才會被允許使用相機。
+純前端(瀏覽器 Canvas + IndexedDB)做的互動 mockup,拿來在**開發過程中**快速
+驗證 UX/互動流程用的——不用開 Android Studio、不用裝置,瀏覽器打開就能點過一次
+完整流程。全畫面手勢偵測、即時小視窗 PiP 這兩個設計決定,都是先在這裡驗證過
+手感才回頭套進正式版的。細節、已知限制、與正式版的差異對照表見
+[`web-prototype/README.md`](web-prototype/README.md)。
 
-### 在真實手機(例如 Pixel 9)上測試
-
-**最容易踩到的坑是「不安全連線」**:如果直接在手機瀏覽器打你電腦的區網 IP
-(`http://192.168.x.x:8000`),Chrome 會直接不給用相機(`getUserMedia` 在非
-安全連線下整個不存在),App 現在會跳出明確提示而不是靜默失敗,但還是要換方式開:
-
-1. **`adb reverse`(推薦,免部署)**:手機用 USB 接電腦、開啟 USB 偵錯,執行
-   `adb reverse tcp:8000 tcp:8000`,再於手機 Chrome 開 `http://localhost:8000/`
-   —— Chrome 把 `localhost` 一律視為安全連線,即使是 HTTP。
-2. **GitHub Pages / 其他 HTTPS 靜態託管**:把這個 repo 部署成靜態網站,直接用
-   `https://...` 網址在手機上開,不需要接電腦。
-3. **HTTPS 穿隧工具**(如 `ngrok`, `cloudflared tunnel`):跑在電腦上,產生一個
-   臨時 HTTPS 網址給手機開。
-
-其餘在真實手機上會遇到、且已經處理過的地方:
-
-- **手勢辨識(MediaPipe)第一次要下載 WASM + 模型**(從 Google 官方 CDN),在
-  這個開發沙盒裡網路被擋所以測不到,但一般手機的正常網路連線下沒問題,只是
-  第一次會有幾秒鐘的載入時間,badge 會顯示「手勢辨識初始化中…」。
-- **GPU delegate 相容性**:MediaPipe 預設優先用 GPU 加速,但不同手機/瀏覽器
-  版本支援度不一;已加上失敗自動退回 CPU delegate 的邏輯,不會因為 GPU
-  delegate 建立失敗就整個手勢辨識報廢。
-- **橫向旋轉**:手機外框畫面已改成同時依寬、高兩個方向縮放,直式、橫式都測過
-  不會跑版(見下方「已驗證」清單)。
-
-已經用 Playwright 的 Pixel 7 device profile(和 Pixel 9 同一代、CSS 尺寸相近,
-412×839 直式 / 863×360 橫式,配合假相機裝置)實測過完整流程,沒有版面溢出或
-JS 錯誤;但實機的真實鏡頭畫質、手勢辨識的準確度、觸控手感這些還是需要你自己
-在 Pixel 9 上開實測,模擬器測不出來。
-
-## 對應規格 vs. 本 prototype 的取捨
-
-這是純前端(HTML/Canvas/IndexedDB)prototype,沒有 Android 原生元件,因此以下
-幾點刻意做了簡化,皆已在程式碼註解中標明:
-
-| 規格項目 | Android 正式版做法(規格書) | 本 prototype 做法 |
-| --- | --- | --- |
-| 常駐延遲畫面 (2.1) | 60fps 短片段檔案循環覆寫 + 串接 | 相機畫面持續取樣進記憶體 ring buffer(~15fps、384×216),畫面 canvas 直接畫出「N 秒前」的那一張 |
-| 回溯存檔 (2.2 步驟1) | 串接 buffer 片段輸出 MP4 (MediaCodec/MediaMuxer) | 立即從記憶體 buffer 播放慢動作回放(不需等待編碼);背景同時用 `canvas.captureStream()+MediaRecorder` 產生 WebM 存進畫廊 |
-| 手勢辨識 (2.2 / 5.3) | MediaPipe Hands,固定角落 ROI,自訂「五指張開」判斷 | MediaPipe **GestureRecognizer**(Web/WASM 版)的內建 `Open_Palm` 類別做為「張開手掌」的替代判斷,並加入 9.1 提到的 0.35 秒穩定觸發門檻與 3 秒冷卻。**改為偵測全畫面而非固定角落 ROI**(實測角落 ROI 太小、手勢很難準確落在裡面比出來,全畫面辨識容錯高很多)。WASM 與模型從 Google 官方 CDN 於執行時下載;離線或網路受限時會自動降級為「僅手動按鈕」,不會讓 App 壞掉(這也正是規格 3.1 所說手勢辨識失敗時的備援設計) |
-| 手動存檔按鈕 (3.1) | 有 | 有,行為與手勢觸發共用同一條存檔/回放流程 |
-| 回放期間忽略新觸發 (2.2) | 有 | 有,以 `appState` 狀態機(LIVE/SAVING/REPLAY)保證 |
-| 即時小視窗 (新增,非規格原有項目) | 無 | 主畫面左上/右上角疊加一個小的即時(無延遲)相機畫面,方便使用者確認當下鏡頭真的有拍到自己,不用等延遲畫面才看到 |
-| 慣用手切換 (3.3/4) | 切換偵測區左右 | 手勢改為全畫面偵測後,這個設定改為切換**即時小視窗**顯示在左上或右上角,盡量避開比手勢的那隻手 |
-| 儲存 (6) | MediaStore 永久資料夾 | IndexedDB(瀏覽器沙盒儲存,無法真的存進手機相簿;下載/分享用瀏覽器下載連結代替) |
-| App 背景/中斷行為 (9.1 未定事項) | 未定 | 本 prototype 選擇的具體策略:切到背景時暫停取樣與辨識,回到前景後清空 buffer、重新累積(畫面會重新出現「準備延遲畫面…」倒數) |
-| 儲存失敗提示 (9.2) | 未定 | 已補上:編碼/存檔失敗會跳出 toast 提示,不會讓使用者誤以為已存檔 |
-
-## 檔案結構
-
-```
-index.html            四個畫面(Live / Replay / Settings / Gallery / Player)的 DOM 結構,手機外框樣式
-style.css             所有畫面樣式
-src/state.js          設定預設值、App 狀態與畫面列舉、極簡 pub/sub store
-src/frameBuffer.js     持續取樣相機畫面的 ring buffer(對應 2.1 / 5.2)
-src/delayRenderer.js   畫出「N 秒前」畫面 + 參考線(對應 2.1 / 3.1)
-src/gestureEngine.js   MediaPipe GestureRecognizer 包裝(全畫面偵測)+ 穩定觸發門檻 + 手動備援(對應 2.2 / 5.3 / 9.1)
-src/clipRecorder.js    立即慢動作回放 + 背景輸出 WebM(對應 2.2 / 3.2)
-src/galleryStore.js    IndexedDB 存取(對應 3.4 / 6)
-src/settingsStore.js   設定持久化(localStorage)
-src/utils.js           檔名格式化等小工具
-src/app.js             畫面導覽、狀態機、把上述模組串起來的主程式
-```
-
-## 已驗證的操作流程(以 Chromium headless + fake camera device 測試過)
-
-- 開啟後顯示「準備延遲畫面…」倒數,buffer 累積足夠後自動切成延遲鏡子畫面。
-- 手動存檔按鈕 → 立即切到慢動作回放畫面、可提早按「立即返回」、播放結束自動回到
-  Live 畫面且回放期間按鈕/手勢會被忽略。
-- 背景輸出的片段確實存進畫廊(縮圖、檔名、時長皆正確),點擊可全螢幕播放、可切換
-  慢動作播放、可下載或刪除。
-- 設定頁調整「延遲秒數」「回溯存檔範圍」會立即反映在下一次存檔的片段長度上。
-- 手勢辨識模型下載失敗(離線 / 網路政策阻擋)時會自動顯示「手勢辨識未啟用,請用
-  手動存檔按鈕」,其餘功能不受影響。
-
-手勢辨識本身(對著鏡頭比出張開手掌)需要真實鏡頭與網路存取 MediaPipe 模型,建議在
-一般開發機或手機瀏覽器上實測。
-
-## 尚未涵蓋(刻意排除,見規格第 8 節「未來擴充」)
-
-教練模式/多裝置連線、姿勢骨架疊加與角度量測、靶面自動計分、iOS 版本 — 這些都是
-v1 之後的擴充項目,不在本 prototype 範圍內。
+之後如果還要再驗證新的互動流程想法,建議先在這裡改著試,比每次都重新 build
+原生 App 快很多;但**不要拿這個當成最終驗收標準**,效能、真實鏡頭/手勢辨識的
+表現都得以 `android/` 為準。

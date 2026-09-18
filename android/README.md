@@ -50,9 +50,8 @@ GestureRecognizer 全畫面手勢辨識、MediaMuxer 存檔匯出、MediaStore �
 1. 用 Android Studio 開啟 `android/` 這個資料夾(不是整個 repo 根目錄)。
 2. 讓它自動同步/視需要升級 AGP、Gradle(build.gradle.kts 裡寫的版本是已知穩定版,
    Studio 通常會提示更新,接受即可)。
-3. 下載手勢辨識模型,放到 `app/src/main/assets/gesture_recognizer.task`
-   (見 `app/src/main/assets/README.md` 裡的下載連結)。沒放也能跑,只是手勢辨識會
-   停用、退回手動存檔按鈕。
+3. 手勢辨識模型(`gesture_recognizer.task`)已經放在 `app/src/main/assets/` 裡了,
+   不用另外下載;之後要換模型版本的話見該資料夾 README。
 4. 接上 Pixel 9(USB 或無線偵錯),直接 Run。minSdk 設 29,Pixel 9 的 Android 版本
    絕對夠。
 
@@ -72,4 +71,4 @@ GestureRecognizer 全畫面手勢辨識、MediaMuxer 存檔匯出、MediaStore �
 
 手勢改成全畫面偵測(而非固定角落 ROI)、以及主畫面加即時小視窗 PiP,都是照使用者
 在網頁版 prototype 測試後給的回饋帶過來的設計決定,不是規格書原文,細節說明見
-repo 根目錄 README 的對照表。
+[`../web-prototype/README.md`](../web-prototype/README.md) 的對照表。
