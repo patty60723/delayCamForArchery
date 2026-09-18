@@ -19,6 +19,36 @@ npx serve .
 再以 **Chrome / Edge**(需要相機權限,建議 desktop 或 Android 版)開啟
 `http://localhost:8000/`。手機瀏覽器需以 HTTPS 或 `localhost` 存取才會被允許使用相機。
 
+### 在真實手機(例如 Pixel 9)上測試
+
+**最容易踩到的坑是「不安全連線」**:如果直接在手機瀏覽器打你電腦的區網 IP
+(`http://192.168.x.x:8000`),Chrome 會直接不給用相機(`getUserMedia` 在非
+安全連線下整個不存在),App 現在會跳出明確提示而不是靜默失敗,但還是要換方式開:
+
+1. **`adb reverse`(推薦,免部署)**:手機用 USB 接電腦、開啟 USB 偵錯,執行
+   `adb reverse tcp:8000 tcp:8000`,再於手機 Chrome 開 `http://localhost:8000/`
+   —— Chrome 把 `localhost` 一律視為安全連線,即使是 HTTP。
+2. **GitHub Pages / 其他 HTTPS 靜態託管**:把這個 repo 部署成靜態網站,直接用
+   `https://...` 網址在手機上開,不需要接電腦。
+3. **HTTPS 穿隧工具**(如 `ngrok`, `cloudflared tunnel`):跑在電腦上,產生一個
+   臨時 HTTPS 網址給手機開。
+
+其餘在真實手機上會遇到、且已經處理過的地方:
+
+- **手勢辨識(MediaPipe)第一次要下載 WASM + 模型**(從 Google 官方 CDN),在
+  這個開發沙盒裡網路被擋所以測不到,但一般手機的正常網路連線下沒問題,只是
+  第一次會有幾秒鐘的載入時間,badge 會顯示「手勢辨識初始化中…」。
+- **GPU delegate 相容性**:MediaPipe 預設優先用 GPU 加速,但不同手機/瀏覽器
+  版本支援度不一;已加上失敗自動退回 CPU delegate 的邏輯,不會因為 GPU
+  delegate 建立失敗就整個手勢辨識報廢。
+- **橫向旋轉**:手機外框畫面已改成同時依寬、高兩個方向縮放,直式、橫式都測過
+  不會跑版(見下方「已驗證」清單)。
+
+已經用 Playwright 的 Pixel 7 device profile(和 Pixel 9 同一代、CSS 尺寸相近,
+412×839 直式 / 863×360 橫式,配合假相機裝置)實測過完整流程,沒有版面溢出或
+JS 錯誤;但實機的真實鏡頭畫質、手勢辨識的準確度、觸控手感這些還是需要你自己
+在 Pixel 9 上開實測,模擬器測不出來。
+
 ## 對應規格 vs. 本 prototype 的取捨
 
 這是純前端(HTML/Canvas/IndexedDB)prototype,沒有 Android 原生元件,因此以下

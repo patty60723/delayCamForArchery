@@ -275,6 +275,16 @@ btnDeleteClip.addEventListener('click', async () => {
 
 // ---------- camera bootstrap ----------
 async function initCamera() {
+  // getUserMedia only exists in a secure context (https://, or http:// on
+  // localhost/127.0.0.1). Opening this over plain http://<lan-ip> - the most
+  // likely way someone tries it on a real phone - silently has no
+  // mediaDevices object at all, which is a very different fix (serve over
+  // HTTPS or localhost) from "permission denied", so call it out explicitly
+  // instead of letting it fall into the generic catch below.
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    toast('無法使用相機:此網址不是安全連線 (https 或 localhost)。請改用 HTTPS 網址,或在手機上以 localhost 開啟', 8000);
+    return;
+  }
   try {
     const stream = await navigator.mediaDevices.getUserMedia({
       video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },

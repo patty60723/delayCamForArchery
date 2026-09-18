@@ -44,11 +44,21 @@ export class GestureEngine {
     try {
       const { FilesetResolver, GestureRecognizer } = await import(/* webpackIgnore: true */ VISION_BUNDLE_URL);
       const files = await FilesetResolver.forVisionTasks(WASM_BASE_URL);
-      this._recognizer = await GestureRecognizer.createFromOptions(files, {
+      const options = {
         baseOptions: { modelAssetPath: MODEL_URL, delegate: 'GPU' },
         runningMode: 'VIDEO',
         numHands: 1,
-      });
+      };
+      // GPU delegate support is inconsistent across real mobile GPU/Chrome
+      // combinations - fall back to CPU rather than losing gesture
+      // recognition entirely over a delegate mismatch.
+      try {
+        this._recognizer = await GestureRecognizer.createFromOptions(files, options);
+      } catch (gpuErr) {
+        console.warn('[gestureEngine] GPU delegate failed, retrying on CPU:', gpuErr);
+        options.baseOptions.delegate = 'CPU';
+        this._recognizer = await GestureRecognizer.createFromOptions(files, options);
+      }
       this.available = true;
       this._status('手勢辨識: 已啟用', 'ok');
     } catch (err) {
