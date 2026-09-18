@@ -1,0 +1,15 @@
+*.iml
+.gradle/
+/local.properties
+.idea/
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+*.apk
+*.aab
+
+# Real, per-developer wrapper distribution cache - the committed
+# gradle/wrapper/gradle-wrapper.jar + .properties are what matters.
+!gradle-wrapper.jar

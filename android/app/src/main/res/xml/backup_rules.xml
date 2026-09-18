@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- android:allowBackup is false, so this is inert - present only because
+     the manifest references it (Android Studio's own default template). -->
+<full-backup-content>
+</full-backup-content>

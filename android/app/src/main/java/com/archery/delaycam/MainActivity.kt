@@ -1,0 +1,125 @@
+package com.archery.delaycam
+
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Bundle
+import android.util.Log
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageAnalysis
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.video.Quality
+import androidx.camera.video.QualitySelector
+import androidx.camera.video.Recorder
+import androidx.camera.video.VideoCapture
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.core.content.ContextCompat
+import com.archery.delaycam.navigation.DelayCamNavHost
+import com.archery.delaycam.ui.DelayCamViewModel
+import com.archery.delaycam.ui.theme.DelayCamTheme
+import kotlinx.coroutines.suspendCancellableCoroutine
+import java.util.concurrent.Executors
+import kotlin.coroutines.resume
+
+class MainActivity : ComponentActivity() {
+
+    private val viewModel: DelayCamViewModel by viewModels()
+    private var cameraBound = false
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContent {
+            var hasCameraPermission by remember {
+                mutableStateOf(
+                    ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) ==
+                        PackageManager.PERMISSION_GRANTED
+                )
+            }
+            val permissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+                contract = ActivityResultContracts.RequestPermission(),
+                onResult = { granted -> hasCameraPermission = granted },
+            )
+
+            DelayCamTheme {
+                if (hasCameraPermission) {
+                    // Bound ONCE for the Activity's whole lifetime, independent of which
+                    // Compose screen is currently shown - see DelayCamViewModel.previewUseCase.
+                    LaunchedEffect(Unit) { bindCameraOnce() }
+                    DelayCamNavHost(viewModel = viewModel)
+                } else {
+                    CameraPermissionGate(onRequestPermission = {
+                        permissionLauncher.launch(Manifest.permission.CAMERA)
+                    })
+                }
+            }
+        }
+    }
+
+    private suspend fun bindCameraOnce() {
+        if (cameraBound) return
+        cameraBound = true
+        try {
+            val cameraProvider = awaitCameraProvider()
+
+            val recorder = Recorder.Builder()
+                .setQualitySelector(QualitySelector.from(Quality.HD))
+                .build()
+            val videoCapture = VideoCapture.withOutput(recorder)
+
+            val analysisExecutor = Executors.newSingleThreadExecutor()
+            val imageAnalysis = ImageAnalysis.Builder()
+                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                .build()
+            imageAnalysis.setAnalyzer(analysisExecutor) { proxy ->
+                viewModel.gestureEngine.analyze(proxy)
+            }
+
+            cameraProvider.unbindAll()
+            cameraProvider.bindToLifecycle(
+                this,
+                CameraSelector.DEFAULT_BACK_CAMERA,
+                viewModel.previewUseCase,
+                videoCapture,
+                imageAnalysis,
+            )
+            viewModel.attachVideoCapture(videoCapture)
+        } catch (e: Exception) {
+            Log.e("MainActivity", "CameraX bind failed", e)
+            cameraBound = false
+        }
+    }
+
+    private suspend fun awaitCameraProvider(): ProcessCameraProvider =
+        suspendCancellableCoroutine { cont ->
+            val future = ProcessCameraProvider.getInstance(this)
+            future.addListener({ cont.resume(future.get()) }, ContextCompat.getMainExecutor(this))
+        }
+}
+
+@Composable
+private fun CameraPermissionGate(onRequestPermission: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text("需要相機權限才能使用延遲鏡子 - 請點一下畫面授權", color = Color.White)
+    }
+    LaunchedEffect(Unit) { onRequestPermission() }
+}

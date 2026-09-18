@@ -5,6 +5,11 @@
 開發前,先讓射手/利害關係人實際點得到、看得到「延遲鏡子 + 手勢/按鈕存檔 +
 慢動作回放 + 設定 + 畫廊」這條核心流程,不是最終的 Android 產品。
 
+> 若要測「正式版」(原生 Android,效能才是真的):見 [`android/`](android/) 目錄,
+> 那是照規格書用 Kotlin + CameraX + MediaPipe + MediaCodec 寫的專案骨架 —
+> 骨架完整但**完全沒有實際 build/跑過**(這個沙盒環境下載不到 Android SDK),
+> 細節與已知風險見該目錄的 README。
+
 ## 執行方式
 
 需要以 HTTP(S) 伺服器開啟(camera API 與 ES module 在 `file://` 下無法正常運作),
