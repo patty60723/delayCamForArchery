@@ -53,6 +53,11 @@ GestureRecognizer 全畫面手勢辨識、MediaMuxer 存檔匯出、MediaStore �
 
 ## 建置步驟
 
+用 Android Studio 開最省事;不想裝 Android Studio、只想用 VS Code + 命令列的話,
+見 [`docs/vscode-setup.md`](docs/vscode-setup.md)(裝哪些 SDK 命令列工具、VS Code
+外掛、`.vscode/tasks.json` 有哪些現成的 build/install/logcat 工作、跟 Android
+Studio 比起來有哪些落差)。用 Android Studio 的步驟:
+
 1. 用 Android Studio 開啟 `android/` 這個資料夾(不是整個 repo 根目錄)。
 2. 讓它自動同步/視需要升級 AGP、Gradle(build.gradle.kts 裡寫的版本是已知穩定版,
    Studio 通常會提示更新,接受即可)。

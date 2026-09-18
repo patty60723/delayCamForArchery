@@ -5,6 +5,7 @@ import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaMuxer
 import android.net.Uri
+import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -36,6 +37,8 @@ import java.nio.ByteBuffer
  *
  * NOT YET VERIFIED ON DEVICE - see android/README.md.
  */
+private const val TAG = "ContinuousRecordingSession"
+
 class ContinuousRecordingSession(private val context: Context) {
 
     private val mutex = Mutex()
@@ -95,7 +98,10 @@ class ContinuousRecordingSession(private val context: Context) {
                 }
                 ptsOffsetUs = maxPtsUs + 1
             } catch (e: Exception) {
-                // one bad segment shouldn't kill the whole session recording
+                // one bad segment shouldn't kill the whole session recording, but
+                // log it - repeated hits here are the concatenation risk this
+                // class's doc comment warns about.
+                Log.w(TAG, "failed to append segment ${segment.file.name} to session recording", e)
             } finally {
                 extractor.release()
             }

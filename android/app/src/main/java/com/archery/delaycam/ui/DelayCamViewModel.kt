@@ -1,6 +1,7 @@
 package com.archery.delaycam.ui
 
 import android.app.Application
+import android.util.Log
 import androidx.camera.core.Preview
 import androidx.camera.video.Recorder
 import androidx.camera.video.VideoCapture
@@ -35,6 +36,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 private const val MARGIN_SEC = 2 // extra history kept beyond what delay/backtrack currently need
+private const val TAG = "DelayCamViewModel"
 
 /**
  * Central orchestrator - the native counterpart of the web prototype's
@@ -205,6 +207,7 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
                     _toast.value = "已存檔:$displayName"
                     refreshGallery()
                 } catch (e: Exception) {
+                    Log.e(TAG, "continuous recording stop/save failed", e)
                     _toast.value = "存檔失敗:${e.message ?: "未知錯誤,請確認儲存空間是否足夠"}"
                 } finally {
                     _isContinuousRecording.value = false
@@ -218,6 +221,7 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
                     _isContinuousRecording.value = true
                     _toast.value = "開始連續錄影"
                 } catch (e: Exception) {
+                    Log.e(TAG, "continuous recording start failed", e)
                     _toast.value = "無法開始錄影:${e.message ?: "未知錯誤"}"
                 }
             }
@@ -247,6 +251,7 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
                 _toast.value = "已存檔:$displayName"
                 refreshGallery()
             } catch (e: Exception) {
+                Log.e(TAG, "per-shot backtrack save failed", e)
                 _toast.value = "存檔失敗:${e.message ?: "未知錯誤,請確認儲存空間是否足夠"}"
             }
         }

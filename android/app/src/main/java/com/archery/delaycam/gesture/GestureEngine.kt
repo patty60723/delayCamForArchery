@@ -7,6 +7,7 @@ import android.graphics.ImageFormat
 import android.graphics.Matrix
 import android.graphics.Rect
 import android.graphics.YuvImage
+import android.util.Log
 import androidx.camera.core.ImageProxy
 import com.google.mediapipe.framework.image.BitmapImageBuilder
 import com.google.mediapipe.framework.image.MPImage
@@ -24,6 +25,7 @@ private const val MIN_SCORE = 0.6f
 
 private const val SAVE_CATEGORY = "Open_Palm"
 private const val RECORD_TOGGLE_CATEGORY = "Thumb_Up"
+private const val TAG = "GestureEngine"
 
 /**
  * Full-frame gesture triggers (spec 2.2 / 5.3), two independent ones:
@@ -111,6 +113,7 @@ class GestureEngine(
             .build()
         GestureRecognizer.createFromOptions(context, options)
     } catch (e: Exception) {
+        Log.w(TAG, "createFromOptions failed for delegate=$delegate", e)
         null
     }
 
@@ -130,7 +133,11 @@ class GestureEngine(
             val mpImage = BitmapImageBuilder(rotated).build()
             r.recognizeAsync(mpImage, imageProxy.imageInfo.timestamp / 1_000_000L)
         } catch (e: Exception) {
-            // decode/inference hiccup on this one frame - skip it, try the next
+            // decode/inference hiccup on this one frame - skip it, try the next.
+            // If this fires on every frame (not just occasionally), that's the
+            // pixelStride assumption in toBitmapViaYuv() being wrong on this
+            // device - see this file's class doc.
+            Log.w(TAG, "frame analyze() failed, skipping this frame", e)
         } finally {
             imageProxy.close()
         }

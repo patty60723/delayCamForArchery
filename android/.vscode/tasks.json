@@ -1,0 +1,73 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Android: List connected devices",
+      "type": "shell",
+      "command": "adb",
+      "args": ["devices"],
+      "problemMatcher": []
+    },
+    {
+      "label": "Android: Clean",
+      "type": "shell",
+      "command": "./gradlew",
+      "windows": { "command": "gradlew.bat" },
+      "args": ["clean"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "Android: Build Debug APK",
+      "type": "shell",
+      "command": "./gradlew",
+      "windows": { "command": "gradlew.bat" },
+      "args": ["assembleDebug"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "Android: Install Debug on device (build + adb install)",
+      "type": "shell",
+      "command": "./gradlew",
+      "windows": { "command": "gradlew.bat" },
+      "args": ["installDebug"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "group": "build",
+      "problemMatcher": [],
+      "dependsOn": ["Android: List connected devices"]
+    },
+    {
+      "label": "Android: Uninstall from device",
+      "type": "shell",
+      "command": "adb",
+      "args": ["uninstall", "com.archery.delaycam"],
+      "problemMatcher": []
+    },
+    {
+      "label": "Android: Logcat (all, unfiltered)",
+      "type": "shell",
+      "command": "adb",
+      "args": ["logcat"],
+      "isBackground": true,
+      "problemMatcher": []
+    },
+    {
+      "label": "Android: Logcat (this app's own log lines only)",
+      "type": "shell",
+      "command": "adb",
+      "args": [
+        "logcat",
+        "-s",
+        "MainActivity:*",
+        "DelayCamViewModel:*",
+        "GestureEngine:*",
+        "ContinuousRecordingSession:*"
+      ],
+      "isBackground": true,
+      "problemMatcher": []
+    }
+  ]
+}
