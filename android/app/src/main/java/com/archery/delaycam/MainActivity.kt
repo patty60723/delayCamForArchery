@@ -37,6 +37,7 @@ class MainActivity : ComponentActivity() {
 
     private val viewModel: DelayCamViewModel by viewModels()
     private var cameraBound = false
+    private var lastLoggedRotationDegrees = -1
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -87,6 +88,23 @@ class MainActivity : ComponentActivity() {
             // owns it anymore).
             imageAnalysis.setAnalyzer(analysisExecutor) { proxy ->
                 try {
+                    // Reported "delayed view upside-down + both gestures dead"
+                    // (they likely share one cause: gesture recognition reads
+                    // the exact same bitmap the encoder draws, so a
+                    // consistently-wrong rotation would break both at once).
+                    // Logging the raw value CameraX reports rather than
+                    // guessing a third time at front-camera rotation math -
+                    // this is diagnostic only, the rotation logic itself is
+                    // unchanged pending what this shows.
+                    val rotationDegrees = proxy.imageInfo.rotationDegrees
+                    if (rotationDegrees != lastLoggedRotationDegrees) {
+                        lastLoggedRotationDegrees = rotationDegrees
+                        Log.d(
+                            "MainActivity",
+                            "camera frame ${proxy.width}x${proxy.height}, " +
+                                "imageInfo.rotationDegrees=$rotationDegrees"
+                        )
+                    }
                     val bitmap = proxy.toRotatedBitmap()
                     val timestampMs = proxy.imageInfo.timestamp / 1_000_000L
                     viewModel.segmentEncoder.onFrame(bitmap)
