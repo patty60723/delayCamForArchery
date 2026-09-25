@@ -97,6 +97,22 @@ README),不用像很多 Android 專案那樣另外手動下載大型 asset 檔�
   見 `app/build.gradle.kts`)。手動選的話是
   `Settings → Build, Execution, Deployment → Build Tools → Gradle → Gradle JDK`,
   選一個 17–24 之間的版本,不要選 25 或更新的。
+- **`Failed to resolve: <某個套件座標>`**:這份骨架的依賴版本號是在完全連不到
+  Google Maven(AndroidX/CameraX/MediaPipe/Media3 的套件都放在那)、也連不到
+  Maven Central 的沙盒環境裡寫的,所以版本號、甚至座標本身都只能憑寫的當下的
+  既有知識,沒辦法實際逐一驗證——遇到某個依賴解析不到是有可能的,不是你設定
+  哪裡錯了。排查順序:
+  1. 先確認那個依賴**有沒有在程式碼裡真的用到**(`grep -rn` 對應的
+     `import` 路徑)。像 `media3-ui-compose` 這個例子,加進
+     `app/build.gradle.kts` 但整個專案沒有任何地方 import 它,直接刪掉那行
+     依賴就解決了,不用花時間去找正確版本號。
+  2. 如果有用到:多半是版本號寫錯或該版本已下架。點 Android Studio 錯誤訊息
+     旁邊的 **Show in Project Structure dialog**,在依賴那一頁通常可以直接
+     選清單裡實際存在的版本;或直接去該套件的官方文件/release notes 查目前
+     的最新穩定版,換掉 `build.gradle.kts` 裡寫的版本號。
+  3. **「Fix with AI」那個按鈕本身沒問題可以點**,但看不到它實際改了什麼之前
+     不要照單全收——尤其如果它把版本號降到明顯舊很多的版本,或改動的依賴跟
+     錯誤訊息講的不是同一個,回頭確認一下改動內容。
 - **`INSTALL_FAILED_...` 系列的安裝錯誤**:通常是手機上已經裝過舊版簽章不同,
   先 `adb uninstall com.archery.delaycam`(或在手機上手動移除 App)再重新
   Run 一次。

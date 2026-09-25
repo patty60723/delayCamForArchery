@@ -76,10 +76,11 @@ dependencies {
     implementation("com.google.mediapipe:tasks-vision:0.10.14")
 
     // --- Media3 / ExoPlayer (delayed playback + slow-mo playback speed) ---
+    // Only media3-ui is used (PlayerView via AndroidView in Compose screens,
+    // not the separate Compose-native media3-ui-compose components).
     val media3Version = "1.4.1"
     implementation("androidx.media3:media3-exoplayer:$media3Version")
     implementation("androidx.media3:media3-ui:$media3Version")
-    implementation("androidx.media3:media3-ui-compose:$media3Version")
 
     // --- Settings persistence (spec 4) ---
     implementation("androidx.datastore:datastore-preferences:1.1.1")

@@ -22,6 +22,11 @@ GestureRecognizer 全畫面手勢辨識、MediaMuxer 存檔匯出、MediaStore �
   API(CameraX Recorder、MediaMuxer 串接、MediaPipe Android AAR、ExoPlayer 播放清單)
   的實際行為只能等你在 Android Studio(或見下方 VS Code 那條路)裡 build 出來、
   裝到實機上跑才知道。
+- ❌ **`build.gradle.kts` 裡的依賴版本號也是憑既有知識寫的,沒有逐一對過真的
+  存在。** 已經實際踩到一次(`media3-ui-compose:1.4.1` 解析不到,而且整個專案
+  根本沒用到它,直接刪掉了事);後續 sync 如果再冒出其他 `Failed to resolve`,
+  是預期中可能發生的事,排查方式見
+  [`docs/android-studio-setup.md`](docs/android-studio-setup.md) 疑難排解那節。
 
 換句話說:這是一份「骨架」,不是「能動的 App」——架構、檔案分工、對應規格的邏輯都在,
 但請預期第一次 build/跑會需要除錯。下面列出我認為風險最高、最可能需要修的幾個地方。
