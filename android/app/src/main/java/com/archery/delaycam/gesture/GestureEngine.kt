@@ -16,7 +16,14 @@ import com.google.mediapipe.tasks.vision.gesturerecognizer.GestureRecognizerResu
 private const val MODEL_ASSET_PATH = "gesture_recognizer.task"
 private const val STABLE_MS = 350L
 private const val COOLDOWN_MS = 3000L
-private const val MIN_SCORE = 0.6f
+// Confirmed via on-device logcat (GestureEngine's own score logging): a
+// clearly-held Open_Palm pose spent several seconds oscillating in the
+// 0.50-0.65 range before finally sustaining above 0.6 long enough to
+// fire. 0.6 was cutting it close against the model's real confidence
+// range for this gesture, not obviously wrong but not comfortable either
+// - nudged down slightly. The manual save button is always available
+// regardless, so a slightly more permissive threshold costs little.
+private const val MIN_SCORE = 0.55f
 
 private const val SAVE_CATEGORY = "Open_Palm"
 private const val RECORD_TOGGLE_CATEGORY = "Thumb_Up"
