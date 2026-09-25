@@ -36,11 +36,16 @@ GestureRecognizer 全畫面手勢辨識、MediaMuxer 存檔匯出、MediaStore �
 1. **`camera/ContinuousSegmentEncoder.kt`** — 早期版本用 CameraX `Recorder` 的
    stop()+start() 循環切片段檔案,實機測試後在 logcat 證實這會讓相鄰片段的 H.264
    SPS(編碼參數)真的不一致("Inconsisted profile/level found in SPS"),導致延遲
-   畫面在片段交界處卡死/黑畫面。現在改成自己接管 `MediaCodec`,全程只開一個編碼器
-   session、只在關鍵影格處切換輸出檔案,理論上每個片段的編碼參數應該完全一致——但
-   這個版本本身也還沒有實機驗證過,自訂的 `Preview.SurfaceProvider` 也還沒有跟
-   CameraX 的旋轉修正機制一起測過,要留意畫面方向是否正確。另外 60fps(規格 5.1)
-   目前沒有透過 `Camera2Interop` 釘死 frame rate range,先跑起來看看裝置預設幀率再說。
+   畫面在片段交界處卡死/黑畫面。改成自己接管 `MediaCodec` 後,第一版是另外綁一個
+   `Preview` use case 把畫面接進編碼器,結果實機測試直接綁定失敗("No supported
+   surface combination")——這台裝置的前鏡頭不支援兩個 `Preview` 類型的 stream
+   同時跟 `ImageAnalysis` 並存。現在改成不開新的相機 stream,直接讓編碼器吃
+   `ImageAnalysis`(跟手勢辨識共用同一路)的 YUV 畫面,用 buffer 模式手動把每一
+   幀的 Y/U/V 三個 plane 複製進 `MediaCodec` 的輸入 `Image`。這個版本也還沒有
+   實機驗證過,尤其要留意:(a) 畫面方向對不對(旋轉是用 `MediaMuxer` 的
+   orientation hint 而不是真的轉像素)、(b) YUV plane 複製邏輯本身有沒有問題
+   (畫面花掉/顏色不對通常就是這裡)。另外 60fps(規格 5.1)目前沒有透過
+   `Camera2Interop` 釘死 frame rate range,先跑起來看看裝置預設幀率再說。
 
 2. **`camera/ClipExporter.kt`** — 把多個片段檔案用 `MediaExtractor`+`MediaMuxer`
    串接成一支輸出 MP4。現在片段都來自同一個持續運作的編碼器 session,編碼參數應該

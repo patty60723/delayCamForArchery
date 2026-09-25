@@ -10,7 +10,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
-import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -73,33 +72,25 @@ class MainActivity : ComponentActivity() {
         try {
             val cameraProvider = awaitCameraProvider()
 
-            // Feeds ContinuousSegmentEncoder instead of CameraX's own
-            // Recorder - see that class's doc comment for why: reusing one
-            // Recorder for rapid stop()/start() segment cycling was
-            // confirmed on-device to produce segments with genuinely
-            // inconsistent H.264 SPS profile/level at their boundaries,
-            // which is what was breaking playback. A second Preview use
-            // case (not a VideoCapture) is the standard CameraX pattern for
-            // handing camera frames to a Surface you don't own, like a
-            // MediaCodec encoder's input surface - CameraX does not
-            // auto-correct rotation for it the way PreviewView does, so
-            // the SurfaceRequest's TransformationInfoListener result is
-            // forwarded to setOrientationHint() explicitly.
-            val encodingPreview = Preview.Builder().build()
-            encodingPreview.setSurfaceProvider(ContextCompat.getMainExecutor(this)) { request ->
-                val resolution = request.resolution
-                val surface = viewModel.segmentEncoder.prepare(resolution.width, resolution.height)
-                request.setTransformationInfoListener(ContextCompat.getMainExecutor(this)) { info ->
-                    viewModel.segmentEncoder.setOrientationHint(info.rotationDegrees)
-                }
-                request.provideSurface(surface, ContextCompat.getMainExecutor(this)) { }
-            }
-
             val analysisExecutor = Executors.newSingleThreadExecutor()
             val imageAnalysis = ImageAnalysis.Builder()
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                 .build()
+            // First attempt at feeding ContinuousSegmentEncoder used a
+            // second Preview use case for its own dedicated camera stream -
+            // confirmed on-device that failed outright ("No supported
+            // surface combination is found for camera device"): this
+            // device's front camera doesn't support two Preview-class
+            // streams alongside ImageAnalysis, so NOTHING bound (no PiP
+            // preview, no segments, ever). Feeding the encoder from this
+            // same already-working ImageAnalysis stream instead - the one
+            // gesture detection already runs on - adds zero new camera
+            // streams, so it can't hit a new combination rejection. See
+            // ContinuousSegmentEncoder's doc comment for the frame-copy
+            // details. onCameraFrame() does not close proxy -
+            // gestureEngine.analyze() does, as it already did.
             imageAnalysis.setAnalyzer(analysisExecutor) { proxy ->
+                viewModel.segmentEncoder.onCameraFrame(proxy)
                 viewModel.gestureEngine.analyze(proxy)
             }
 
@@ -111,7 +102,6 @@ class MainActivity : ComponentActivity() {
                 this,
                 CameraSelector.DEFAULT_FRONT_CAMERA,
                 viewModel.previewUseCase,
-                encodingPreview,
                 imageAnalysis,
             )
         } catch (e: Exception) {

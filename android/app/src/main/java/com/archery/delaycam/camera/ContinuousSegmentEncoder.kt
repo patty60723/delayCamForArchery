@@ -1,5 +1,6 @@
 package com.archery.delaycam.camera
 
+import android.media.Image
 import android.media.MediaCodec
 import android.media.MediaCodecInfo
 import android.media.MediaFormat
@@ -7,8 +8,9 @@ import android.media.MediaMuxer
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
-import android.view.Surface
+import androidx.camera.core.ImageProxy
 import java.io.File
+import java.nio.ByteBuffer
 
 private const val TAG = "ContinuousSegmentEncoder"
 private const val BIT_RATE = 8_000_000
@@ -44,16 +46,26 @@ private const val SEGMENT_TARGET_MS = 2000L
  * (SegmentBuffer, DelayedPlaybackController, ClipExporter,
  * ContinuousRecordingSession) needed to change for this swap.
  *
- * Frames arrive via a CameraX Preview.SurfaceProvider handing camera
- * frames to this class's own input Surface (see prepare()), wired up in
- * MainActivity - unlike PreviewView/CameraX's own Recorder, CameraX does
- * NOT auto-correct rotation for a custom SurfaceProvider, so the caller
- * must forward it from the SurfaceRequest's TransformationInfoListener
- * via setOrientationHint(). That's baked into each output file as
- * MediaMuxer's orientation-hint metadata (the same mechanism every phone
- * camera app uses for portrait recordings) rather than by transforming
- * pixels - simpler, and avoids needing a GL rendering pass just to
- * rotate frames before they reach the encoder.
+ * FIRST ATTEMPT AT THIS FIX used a second CameraX Preview use case (its
+ * SurfaceProvider handing frames to a Surface-mode MediaCodec input
+ * surface) instead of the buffer-mode design below. CONFIRMED ON DEVICE
+ * that failed outright: "No supported surface combination is found for
+ * camera device - Id : 1" - this device's front camera does not support
+ * two Preview-class streams alongside ImageAnalysis at once, so nothing
+ * bound at all (no PiP preview, no segments, ever).
+ *
+ * This version instead reuses the ALREADY-bound ImageAnalysis stream
+ * (the same one gesture detection already runs on) as the encoder's
+ * frame source too - zero new camera streams, so it can't hit a new
+ * surface-combination rejection: onCameraFrame(imageProxy) is called
+ * from MainActivity's existing analyzer, and copies each YUV_420_888
+ * frame's planes directly into a buffer-mode MediaCodec input Image
+ * (KEY_COLOR_FORMAT = COLOR_FormatYUV420Flexible, MediaCodec.
+ * getInputImage()) - no Surface, no GL, no lossy JPEG round-trip.
+ * Rotation still can't be auto-corrected by the platform for a manual
+ * feed like this, so the caller's imageInfo.rotationDegrees is baked
+ * into each output file as MediaMuxer's orientation-hint metadata (the
+ * same mechanism every phone camera app uses for portrait recordings).
  *
  * NOT YET VERIFIED ON DEVICE.
  */
@@ -67,8 +79,14 @@ class ContinuousSegmentEncoder(
 
     private val mainHandler = Handler(Looper.getMainLooper())
 
+    // Lifecycle fields (configure/stop) are touched from both the calling
+    // analyzer thread (lazy configure on first frame) and whatever thread
+    // calls stop() (ViewModel.onCleared, main thread) - synchronized.
+    // Per-frame input calls (dequeueInputBuffer/queueInputBuffer) are not
+    // synchronized against the drain loop's output calls: MediaCodec's own
+    // contract explicitly supports one thread feeding input while another
+    // drains output concurrently.
     private var codec: MediaCodec? = null
-    private var inputSurface: Surface? = null
     private var drainThread: Thread? = null
 
     // Only ever touched from the single drain thread below once running.
@@ -83,38 +101,67 @@ class ContinuousSegmentEncoder(
         ringSize = size.coerceAtLeast(2)
     }
 
-    /** Forwarded from SurfaceRequest.TransformationInfoListener - see class doc. */
+    /** Baked into each segment file as muxer orientation-hint metadata - see class doc. */
     fun setOrientationHint(degrees: Int) {
         orientationHint = degrees
     }
 
     /**
-     * Idempotent: returns the already-prepared surface if called again.
-     * Must be called with the camera's actual negotiated resolution
-     * (SurfaceRequest.resolution), not a value this class picks itself -
-     * the encoder's input surface size is fixed at configure() time and
-     * must match what the camera will actually produce.
+     * Call for every frame from the same ImageAnalysis.Analyzer gesture
+     * detection already uses. Does NOT close imageProxy - the caller
+     * (MainActivity) owns that, since GestureEngine.analyze() also needs
+     * the same frame and already closes it when done with it.
      */
-    @Synchronized
-    fun prepare(width: Int, height: Int): Surface {
-        inputSurface?.let { return it }
+    fun onCameraFrame(imageProxy: ImageProxy) {
+        setOrientationHint(imageProxy.imageInfo.rotationDegrees)
+        configureIfNeeded(imageProxy.width, imageProxy.height)
+        val c = codec ?: return
 
+        val index = try {
+            c.dequeueInputBuffer(0L)
+        } catch (e: Exception) {
+            Log.w(TAG, "dequeueInputBuffer failed, dropping this frame", e)
+            return
+        }
+        if (index < 0) return // encoder busy - drop this frame, same spirit as STRATEGY_KEEP_ONLY_LATEST
+
+        val inputImage = try {
+            c.getInputImage(index)
+        } catch (e: Exception) {
+            Log.w(TAG, "getInputImage failed, dropping this frame", e)
+            null
+        }
+        if (inputImage == null) {
+            c.queueInputBuffer(index, 0, 0, 0, 0)
+            return
+        }
+        try {
+            copyYuvPlanes(imageProxy, inputImage)
+            val ptsUs = imageProxy.imageInfo.timestamp / 1000L
+            val frameSize = imageProxy.width * imageProxy.height * 3 / 2
+            c.queueInputBuffer(index, 0, frameSize, ptsUs, 0)
+        } catch (e: Exception) {
+            Log.w(TAG, "copying frame into codec input failed, dropping this frame", e)
+            c.queueInputBuffer(index, 0, 0, 0, 0)
+        }
+    }
+
+    @Synchronized
+    private fun configureIfNeeded(width: Int, height: Int) {
+        if (codec != null) return
         val format = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, width, height).apply {
-            setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
+            setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible)
             setInteger(MediaFormat.KEY_BIT_RATE, BIT_RATE)
             setInteger(MediaFormat.KEY_FRAME_RATE, FRAME_RATE)
             setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, I_FRAME_INTERVAL_SEC)
         }
         val newCodec = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
         newCodec.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
-        val surface = newCodec.createInputSurface()
         newCodec.start()
 
         codec = newCodec
-        inputSurface = surface
         running = true
         drainThread = Thread({ drainLoop() }, "ContinuousSegmentEncoder-drain").apply { start() }
-        return surface
     }
 
     @Synchronized
@@ -130,7 +177,6 @@ class ContinuousSegmentEncoder(
         }
         codec?.release()
         codec = null
-        inputSurface = null
     }
 
     private fun drainLoop() {
@@ -213,4 +259,68 @@ class ContinuousSegmentEncoder(
 
     /** rollbuf_<index>.mp4 - overwritten in place each time its slot comes back around. */
     private fun segmentFile(index: Int): File = File(cacheDir, "rollbuf_segment_$index.mp4")
+}
+
+/**
+ * Copies a YUV_420_888 ImageProxy's three planes into a MediaCodec buffer-
+ * mode input Image (also YUV_420_888-shaped for COLOR_FormatYUV420Flexible).
+ * Row-stride and pixel-stride can both differ between the camera's planes
+ * and the codec's expected input planes, so this is a defensive row-by-row
+ * copy rather than a flat buffer copy - the standard pattern for feeding
+ * camera frames into MediaCodec's buffer-mode Image input.
+ */
+private fun copyYuvPlanes(src: ImageProxy, dst: Image) {
+    val srcPlanes = src.planes
+    val dstPlanes = dst.planes
+    copyPlane(srcPlanes[0].buffer, srcPlanes[0].rowStride, srcPlanes[0].pixelStride,
+        dstPlanes[0].buffer, dstPlanes[0].rowStride, dstPlanes[0].pixelStride,
+        src.width, src.height)
+    val chromaWidth = src.width / 2
+    val chromaHeight = src.height / 2
+    copyPlane(srcPlanes[1].buffer, srcPlanes[1].rowStride, srcPlanes[1].pixelStride,
+        dstPlanes[1].buffer, dstPlanes[1].rowStride, dstPlanes[1].pixelStride,
+        chromaWidth, chromaHeight)
+    copyPlane(srcPlanes[2].buffer, srcPlanes[2].rowStride, srcPlanes[2].pixelStride,
+        dstPlanes[2].buffer, dstPlanes[2].rowStride, dstPlanes[2].pixelStride,
+        chromaWidth, chromaHeight)
+}
+
+private fun copyPlane(
+    srcBuf: ByteBuffer,
+    srcRowStride: Int,
+    srcPixelStride: Int,
+    dstBuf: ByteBuffer,
+    dstRowStride: Int,
+    dstPixelStride: Int,
+    width: Int,
+    height: Int,
+) {
+    val src = srcBuf.duplicate()
+    val dst = dstBuf.duplicate()
+    if (srcPixelStride == 1 && dstPixelStride == 1) {
+        val row = ByteArray(width)
+        for (r in 0 until height) {
+            src.position(r * srcRowStride)
+            src.get(row, 0, width)
+            dst.position(r * dstRowStride)
+            dst.put(row, 0, width)
+        }
+    } else {
+        val srcRow = ByteArray(srcRowStride)
+        val dstRow = ByteArray(width * dstPixelStride)
+        for (r in 0 until height) {
+            src.position(r * srcRowStride)
+            val available = minOf(srcRowStride, src.remaining())
+            src.get(srcRow, 0, available)
+            var s = 0
+            var d = 0
+            for (col in 0 until width) {
+                dstRow[d] = srcRow[s]
+                s += srcPixelStride
+                d += dstPixelStride
+            }
+            dst.position(r * dstRowStride)
+            dst.put(dstRow, 0, d)
+        }
+    }
 }
