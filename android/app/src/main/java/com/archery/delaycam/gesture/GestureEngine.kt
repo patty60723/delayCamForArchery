@@ -16,6 +16,10 @@ import com.google.mediapipe.tasks.vision.gesturerecognizer.GestureRecognizerResu
 private const val MODEL_ASSET_PATH = "gesture_recognizer.task"
 private const val STABLE_MS = 350L
 private const val COOLDOWN_MS = 3000L
+// Separate thresholds per gesture - they used to share one MIN_SCORE,
+// which meant lowering it to make Open_Palm easier to trigger (see below)
+// silently made Thumb_Up easier to mis-trigger too.
+//
 // Confirmed via on-device logcat (GestureEngine's own score logging): a
 // clearly-held Open_Palm pose spent several seconds oscillating in the
 // 0.50-0.65 range before finally sustaining above 0.6 long enough to
@@ -23,7 +27,14 @@ private const val COOLDOWN_MS = 3000L
 // range for this gesture, not obviously wrong but not comfortable either
 // - nudged down slightly. The manual save button is always available
 // regardless, so a slightly more permissive threshold costs little.
-private const val MIN_SCORE = 0.55f
+private const val SAVE_MIN_SCORE = 0.55f
+// Reported feeling too trigger-happy at the old shared 0.6 (which then
+// dropped to 0.55 as a side effect of the Open_Palm tuning above) -
+// raised well above both, since an accidental continuous-recording
+// toggle is more disruptive than a missed one (archer has to notice and
+// toggle it again, versus just re-gesturing/using the manual button for
+// a single save).
+private const val RECORD_TOGGLE_MIN_SCORE = 0.75f
 
 private const val SAVE_CATEGORY = "Open_Palm"
 private const val RECORD_TOGGLE_CATEGORY = "Thumb_Up"
@@ -149,23 +160,21 @@ class GestureEngine(
         val top = result.gestures().firstOrNull()?.firstOrNull()
         val now = System.currentTimeMillis()
 
-        // Diagnostic for "Thumb_Up works, Open_Palm doesn't": Thumb_Up isn't
-        // gated by `locked` but Open_Palm is, so if `locked` were ever stuck
-        // true this alone would explain the asymmetry. Logging whenever a
-        // category is seen close to the save threshold either way settles
-        // it: never seeing "Open_Palm" near/above MIN_SCORE means it's a
-        // detection/threshold problem, seeing it there but still not firing
-        // means locked (or triggerSave()'s own guards) is the culprit.
+        // Diagnostic logging added while chasing an earlier "Open_Palm never
+        // fires" report - confirmed on-device it was just this gesture's
+        // score genuinely sitting near threshold, not a logic bug (see
+        // SAVE_MIN_SCORE's doc comment). Left in place since it's cheap and
+        // useful for tuning either threshold again from real data.
         if (top != null && (top.categoryName() == SAVE_CATEGORY || top.score() >= 0.4f)) {
             Log.d(TAG, "top gesture=${top.categoryName()} score=${top.score()} locked=$locked")
         }
 
         if (!locked) {
-            val isSaveGesture = top != null && top.categoryName() == SAVE_CATEGORY && top.score() >= MIN_SCORE
+            val isSaveGesture = top != null && top.categoryName() == SAVE_CATEGORY && top.score() >= SAVE_MIN_SCORE
             evaluate(saveState, isSaveGesture, now, onGesture)
         }
 
-        val isRecordToggleGesture = top != null && top.categoryName() == RECORD_TOGGLE_CATEGORY && top.score() >= MIN_SCORE
+        val isRecordToggleGesture = top != null && top.categoryName() == RECORD_TOGGLE_CATEGORY && top.score() >= RECORD_TOGGLE_MIN_SCORE
         evaluate(recordToggleState, isRecordToggleGesture, now, onToggleRecord)
     }
 
