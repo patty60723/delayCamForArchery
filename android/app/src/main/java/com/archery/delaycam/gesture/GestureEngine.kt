@@ -29,12 +29,13 @@ private const val COOLDOWN_MS = 3000L
 // regardless, so a slightly more permissive threshold costs little.
 private const val SAVE_MIN_SCORE = 0.55f
 // Reported feeling too trigger-happy at the old shared 0.6 (which then
-// dropped to 0.55 as a side effect of the Open_Palm tuning above) -
-// raised well above both, since an accidental continuous-recording
-// toggle is more disruptive than a missed one (archer has to notice and
-// toggle it again, versus just re-gesturing/using the manual button for
-// a single save).
-private const val RECORD_TOGGLE_MIN_SCORE = 0.75f
+// dropped to 0.55 as a side effect of the Open_Palm tuning above), raised
+// to 0.75 - then reported *too* insensitive at 0.75, nudged back down a
+// little. Still comfortably above SAVE_MIN_SCORE: an accidental
+// continuous-recording toggle is more disruptive than a missed one
+// (archer has to notice and toggle it again, versus just re-gesturing/
+// using the manual button for a single save).
+private const val RECORD_TOGGLE_MIN_SCORE = 0.70f
 
 private const val SAVE_CATEGORY = "Open_Palm"
 private const val RECORD_TOGGLE_CATEGORY = "Thumb_Up"

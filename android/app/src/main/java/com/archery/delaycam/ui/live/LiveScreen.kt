@@ -108,8 +108,21 @@ fun LiveScreen(
                 }
             },
             update = { previewView -> viewModel.previewUseCase.surfaceProvider = previewView.surfaceProvider },
-            // Mirrored for the same reason as the main delayed view above -
-            // CameraX's PreviewView does not auto-mirror the front camera.
+            // NOT manually mirrored, unlike the main delayed view above -
+            // this was the actual bug behind "PiP and delayed view are
+            // mirror images of each other, not sure which one's wrong":
+            // PreviewView.getSurfaceProvider() (used via `update` above)
+            // auto-mirrors front-camera content by default - that's
+            // PreviewView's own documented behavior, specifically because
+            // it's meant to show a live viewfinder the way a user expects
+            // (like a mirror), unlike ImageAnalysis/raw camera output,
+            // which never mirrors. The old comment here claiming
+            // "PreviewView does not auto-mirror" was simply wrong. Adding
+            // our own scale(-1) on top of that auto-mirror flipped it back
+            // to unmirrored - the delayed view (plain ExoPlayer replaying
+            // our own recording, no camera-facing logic of its own) was
+            // the one correctly mirrored all along via its own explicit
+            // flip; this view just needed its redundant one removed.
             // Corner is always opposite the dominant hand (spec: raising
             // that hand to gesture shouldn't cover it); which corner
             // (top/bottom) depends on orientation - reported that in
@@ -134,8 +147,7 @@ fun LiveScreen(
                 )
                 .width(110.dp)
                 .aspectRatio(3f / 4f)
-                .background(Color.Black, RoundedCornerShape(12.dp))
-                .scale(scaleX = -1f, scaleY = 1f),
+                .background(Color.Black, RoundedCornerShape(12.dp)),
         )
 
         Row(
