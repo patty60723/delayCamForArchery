@@ -156,10 +156,31 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
         livePlayer.addListener(object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
                 Log.e(TAG, "livePlayer error, resetting delayed playback", error)
-                livePlayer.stop()
-                livePlayer.clearMediaItems()
+                resetDelayedPlayback()
             }
         })
+    }
+
+    /**
+     * Confirmed on-device (logcat) this was the missing piece: the error
+     * listener and stall watchdog were only resetting livePlayer itself
+     * (stop + clearMediaItems), not DelayedPlaybackController's own
+     * bookkeeping - its `scheduled` dedup set (keyed by the ring buffer's
+     * reused file paths) and pending Handler callbacks from before the
+     * reset stayed alive, so a new segment landing on a path that still
+     * had a stale "scheduled" entry was silently dropped, and a stale
+     * callback could fire pointing at a file the ring buffer had already
+     * overwritten by the time it ran. That's why livePlayer kept getting
+     * stuck at position 0 after every reset instead of recovering: nothing
+     * was actually reaching it. delayedPlayback.reset() already clears all
+     * of that (it was written for the REPLAY->LIVE transition) - routing
+     * both recovery paths through it keeps the two objects' state in sync.
+     * segmentBuffer.clear() alongside it so the warmup overlay reappears
+     * instead of leaving a bare black screen until the next segment lands.
+     */
+    private fun resetDelayedPlayback() {
+        delayedPlayback.reset()
+        segmentBuffer.clear()
     }
 
     /** Called once by MainActivity after it has bound the CameraX use cases. */
@@ -225,8 +246,7 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
                 lastChangedAtMs = now
             } else if (now - lastChangedAtMs > STALL_THRESHOLD_MS) {
                 Log.w(TAG, "livePlayer stalled at ${position}ms for ${STALL_THRESHOLD_MS}ms+, resetting")
-                livePlayer.stop()
-                livePlayer.clearMediaItems()
+                resetDelayedPlayback()
                 lastPositionMs = -1L
                 lastChangedAtMs = now
             }
