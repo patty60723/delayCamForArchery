@@ -331,12 +331,23 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
      * to the actual present moment (now), just starting further back.
      */
     fun triggerSave() {
-        if (_appState.value != AppState.LIVE) return
+        // Diagnostic for "Open_Palm gesture never seems to do anything":
+        // GestureEngine posts here whenever it fires, so if this log line
+        // never shows up at all, the gesture itself isn't being recognized
+        // (a GestureEngine-side detection/threshold issue, not this
+        // function). If it does show up but nothing visibly happens, one of
+        // the two guards below is the cause - logging exactly which.
+        Log.d(TAG, "triggerSave() called, appState=${_appState.value}")
+        if (_appState.value != AppState.LIVE) {
+            Log.d(TAG, "triggerSave() ignored: appState is not LIVE")
+            return
+        }
         val currentSettings = settings.value
         val now = System.currentTimeMillis()
         val shotReferenceMs = now - currentSettings.delaySec * 1000L
         val segments = segmentBuffer.segmentsCoveringRange(shotReferenceMs - currentSettings.backtrackSec * 1000L, now)
         if (segments.isEmpty()) {
+            Log.d(TAG, "triggerSave() ignored: segmentBuffer had nothing covering the backtrack window")
             _toast.value = "緩衝畫面還不夠,請再等一下"
             return
         }

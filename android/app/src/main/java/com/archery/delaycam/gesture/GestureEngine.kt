@@ -142,6 +142,17 @@ class GestureEngine(
         val top = result.gestures().firstOrNull()?.firstOrNull()
         val now = System.currentTimeMillis()
 
+        // Diagnostic for "Thumb_Up works, Open_Palm doesn't": Thumb_Up isn't
+        // gated by `locked` but Open_Palm is, so if `locked` were ever stuck
+        // true this alone would explain the asymmetry. Logging whenever a
+        // category is seen close to the save threshold either way settles
+        // it: never seeing "Open_Palm" near/above MIN_SCORE means it's a
+        // detection/threshold problem, seeing it there but still not firing
+        // means locked (or triggerSave()'s own guards) is the culprit.
+        if (top != null && (top.categoryName() == SAVE_CATEGORY || top.score() >= 0.4f)) {
+            Log.d(TAG, "top gesture=${top.categoryName()} score=${top.score()} locked=$locked")
+        }
+
         if (!locked) {
             val isSaveGesture = top != null && top.categoryName() == SAVE_CATEGORY && top.score() >= MIN_SCORE
             evaluate(saveState, isSaveGesture, now, onGesture)
