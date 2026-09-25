@@ -7,6 +7,8 @@ import android.graphics.ImageFormat
 import android.graphics.Matrix
 import android.graphics.Rect
 import android.graphics.YuvImage
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import androidx.camera.core.ImageProxy
 import com.google.mediapipe.framework.image.BitmapImageBuilder
@@ -88,6 +90,7 @@ class GestureEngine(
     private var recognizer: GestureRecognizer? = null
     private val saveState = StreakState()
     private val recordToggleState = StreakState()
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     private class StreakState {
         var streakStart: Long = 0L
@@ -149,6 +152,14 @@ class GestureEngine(
         return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
     }
 
+    // MediaPipe's LIVE_STREAM result listener fires on its own internal
+    // TaskRunner thread, not the main thread (confirmed on-device: a save
+    // gesture crashed the app with "Player is accessed on the wrong thread"
+    // - ExoPlayer.stop() in triggerSave() was being called straight from
+    // that thread). onResult/evaluate below run there too, so everything up
+    // through the streak bookkeeping is fine, but the actual onGesture()/
+    // onToggleRecord() callback must be posted to the main thread before it
+    // touches anything UI-thread-confined like the ViewModel's ExoPlayers.
     private fun onResult(result: GestureRecognizerResult, input: MPImage) {
         val top = result.gestures().firstOrNull()?.firstOrNull()
         val now = System.currentTimeMillis()
@@ -172,7 +183,7 @@ class GestureEngine(
         if (heldFor >= STABLE_MS && now - state.lastFireAt >= COOLDOWN_MS) {
             state.lastFireAt = now
             state.streakStart = 0L
-            onFire()
+            mainHandler.post(onFire)
         }
     }
 
