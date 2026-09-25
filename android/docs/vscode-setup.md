@@ -12,6 +12,12 @@ Android Gradle Plugin 8.6(見 `app/build.gradle.kts`)需要 JDK 17。裝
 [Temurin 17](https://adoptium.net/) 或任何 OpenJDK 17 發行版都可以,裝完設定
 `JAVA_HOME` 指過去。
 
+**注意 `JAVA_HOME` 不要指到系統上比較新的 JDK(例如 25)**——這個專案釘死用
+Gradle 8.14.3(見 `gradle/wrapper/gradle-wrapper.properties`),它目前最高只
+支援到 JDK 24,執行 `./gradlew` 時如果 `JAVA_HOME` 指到 25 或更新版本會直接
+報錯(Android Studio 那邊的等價錯誤是「Incompatible Gradle JVM version」,見
+[`android-studio-setup.md`](android-studio-setup.md) 的疑難排解)。
+
 ## 2. 裝 Android SDK 命令列工具(不用整個 Android Studio)
 
 1. 到 https://developer.android.com/studio#command-tools 下載

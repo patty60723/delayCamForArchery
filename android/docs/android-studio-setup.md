@@ -86,6 +86,17 @@ README),不用像很多 Android 專案那樣另外手動下載大型 asset 檔�
 
 ## 8. 疑難排解
 
+- **「Incompatible Gradle JVM version」/「Gradle version 8.14.3 is
+  incompatible with the Gradle JVM version 25」**:這個專案釘死用
+  Gradle 8.14.3(見 `gradle/wrapper/gradle-wrapper.properties`),它最高只支援
+  到 JDK 24,還沒支援到 JDK 25。Android Studio 有時候會抓到系統上裝的較新 JDK
+  當預設值,跟 Gradle 版本兜不起來。點畫面上的
+  **「Apply compatible Gradle JDK configuration and sync」**就會自動選一個
+  相容的 JDK(通常是 Studio 自己內建的 17 或 21)來跑 Gradle,不用自己手動選;
+  這只是改「用哪個 JDK 執行 Gradle」,不影響專案本身編譯用的 JVM target(17,
+  見 `app/build.gradle.kts`)。手動選的話是
+  `Settings → Build, Execution, Deployment → Build Tools → Gradle → Gradle JDK`,
+  選一個 17–24 之間的版本,不要選 25 或更新的。
 - **`INSTALL_FAILED_...` 系列的安裝錯誤**:通常是手機上已經裝過舊版簽章不同,
   先 `adb uninstall com.archery.delaycam`(或在手機上手動移除 App)再重新
   Run 一次。
