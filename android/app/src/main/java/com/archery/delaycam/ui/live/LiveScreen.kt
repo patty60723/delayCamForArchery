@@ -31,6 +31,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -202,8 +203,9 @@ fun LiveScreen(
         ) {
             Surface(shape = RoundedCornerShape(10.dp), color = Color.Black.copy(alpha = 0.35f)) {
                 Text(
-                    text = "跟隨動作後比出「張開手掌」即可自動存檔;比「讚」開始/停止連續錄影,不用每箭都比",
+                    text = "張開手掌自動播放前${settings.backtrackSec}秒慢動作\n比讚開始或停止錄影",
                     color = Color.White,
+                    textAlign = TextAlign.Center,
                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                 )
             }
