@@ -89,10 +89,13 @@ class MainActivity : ComponentActivity() {
                 viewModel.gestureEngine.analyze(proxy)
             }
 
+            // Front camera: the whole point of the delay mirror (spec 2.1) is the
+            // archer looks at the screen like a mirror, which only reads correctly
+            // if the camera facing them is the one doing the filming.
             cameraProvider.unbindAll()
             cameraProvider.bindToLifecycle(
                 this,
-                CameraSelector.DEFAULT_BACK_CAMERA,
+                CameraSelector.DEFAULT_FRONT_CAMERA,
                 viewModel.previewUseCase,
                 videoCapture,
                 imageAnalysis,

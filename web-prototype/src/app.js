@@ -362,8 +362,11 @@ async function initCamera() {
     return;
   }
   try {
+    // Front camera: the whole point of the delay mirror (spec 2.1) is the
+    // archer looks at the screen like a mirror, which only reads correctly
+    // if the camera facing them is the one doing the filming.
     const stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
+      video: { facingMode: { ideal: 'user' }, width: { ideal: 1280 }, height: { ideal: 720 } },
       audio: false,
     });
     camSource.srcObject = stream;
