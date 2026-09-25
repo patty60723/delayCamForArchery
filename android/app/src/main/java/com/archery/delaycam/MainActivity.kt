@@ -25,6 +25,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.core.content.ContextCompat
+import com.archery.delaycam.camera.toRotatedBitmap
 import com.archery.delaycam.navigation.DelayCamNavHost
 import com.archery.delaycam.ui.DelayCamViewModel
 import com.archery.delaycam.ui.theme.DelayCamTheme
@@ -76,22 +77,25 @@ class MainActivity : ComponentActivity() {
             val imageAnalysis = ImageAnalysis.Builder()
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                 .build()
-            // First attempt at feeding ContinuousSegmentEncoder used a
-            // second Preview use case for its own dedicated camera stream -
-            // confirmed on-device that failed outright ("No supported
-            // surface combination is found for camera device"): this
-            // device's front camera doesn't support two Preview-class
-            // streams alongside ImageAnalysis, so NOTHING bound (no PiP
-            // preview, no segments, ever). Feeding the encoder from this
-            // same already-working ImageAnalysis stream instead - the one
-            // gesture detection already runs on - adds zero new camera
-            // streams, so it can't hit a new combination rejection. See
-            // ContinuousSegmentEncoder's doc comment for the frame-copy
-            // details. onCameraFrame() does not close proxy -
-            // gestureEngine.analyze() does, as it already did.
+            // See ContinuousSegmentEncoder's doc comment for the two earlier
+            // approaches that failed on-device (a second Preview use case
+            // rejected at bind time; a hand-rolled YUV-buffer copy that
+            // threw on every frame). This converts each frame to a Bitmap
+            // exactly once - the same conversion GestureEngine used to do
+            // internally - and shares it with both consumers, closing the
+            // ImageProxy itself once both are done with it (neither one
+            // owns it anymore).
             imageAnalysis.setAnalyzer(analysisExecutor) { proxy ->
-                viewModel.segmentEncoder.onCameraFrame(proxy)
-                viewModel.gestureEngine.analyze(proxy)
+                try {
+                    val bitmap = proxy.toRotatedBitmap()
+                    val timestampMs = proxy.imageInfo.timestamp / 1_000_000L
+                    viewModel.segmentEncoder.onFrame(bitmap)
+                    viewModel.gestureEngine.analyzeBitmap(bitmap, timestampMs)
+                } catch (e: Exception) {
+                    Log.w("MainActivity", "frame conversion failed, skipping this frame", e)
+                } finally {
+                    proxy.close()
+                }
             }
 
             // Front camera: the whole point of the delay mirror (spec 2.1) is the

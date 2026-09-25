@@ -36,16 +36,19 @@ GestureRecognizer 全畫面手勢辨識、MediaMuxer 存檔匯出、MediaStore �
 1. **`camera/ContinuousSegmentEncoder.kt`** — 早期版本用 CameraX `Recorder` 的
    stop()+start() 循環切片段檔案,實機測試後在 logcat 證實這會讓相鄰片段的 H.264
    SPS(編碼參數)真的不一致("Inconsisted profile/level found in SPS"),導致延遲
-   畫面在片段交界處卡死/黑畫面。改成自己接管 `MediaCodec` 後,第一版是另外綁一個
-   `Preview` use case 把畫面接進編碼器,結果實機測試直接綁定失敗("No supported
-   surface combination")——這台裝置的前鏡頭不支援兩個 `Preview` 類型的 stream
-   同時跟 `ImageAnalysis` 並存。現在改成不開新的相機 stream,直接讓編碼器吃
-   `ImageAnalysis`(跟手勢辨識共用同一路)的 YUV 畫面,用 buffer 模式手動把每一
-   幀的 Y/U/V 三個 plane 複製進 `MediaCodec` 的輸入 `Image`。這個版本也還沒有
-   實機驗證過,尤其要留意:(a) 畫面方向對不對(旋轉是用 `MediaMuxer` 的
-   orientation hint 而不是真的轉像素)、(b) YUV plane 複製邏輯本身有沒有問題
-   (畫面花掉/顏色不對通常就是這裡)。另外 60fps(規格 5.1)目前沒有透過
-   `Camera2Interop` 釘死 frame rate range,先跑起來看看裝置預設幀率再說。
+   畫面在片段交界處卡死/黑畫面。改成自己接管 `MediaCodec` 後,試過兩種餵畫面的
+   方式都在實機踩到問題:(1) 另外綁一個 `Preview` use case,結果直接綁定失敗
+   ("No supported surface combination")——這台裝置的前鏡頭不支援兩個 `Preview`
+   類型的 stream 同時跟 `ImageAnalysis` 並存;(2) 改成不開新 stream、直接吃
+   `ImageAnalysis` 的畫面,但用 buffer 模式手動複製 YUV plane 進 `MediaCodec`,
+   結果每一幀都丟 `BufferOverflowException`。現在改成:一樣吃 `ImageAnalysis`
+   的畫面(不開新相機 stream),但透過 `GestureEngine` 手勢辨識本來就在用、已經
+   驗證能動的 YUV→Bitmap 轉換(`camera/ImageProxyConversion.kt`),把轉好的
+   Bitmap 用 `Canvas` 畫到編碼器的 Surface 上,而不是自己手刻位元組複製。這個
+   版本也還沒有實機驗證過,要留意畫面顏色/方向對不對;另外因為共用了 JPEG 編解碼
+   的轉換路徑,畫質跟效能會比理論上直接餵 YUV 差一些,先求能動再優化。另外 60fps
+   (規格 5.1)目前沒有透過 `Camera2Interop` 釘死 frame rate range,先跑起來看看
+   裝置預設幀率再說。
 
 2. **`camera/ClipExporter.kt`** — 把多個片段檔案用 `MediaExtractor`+`MediaMuxer`
    串接成一支輸出 MP4。現在片段都來自同一個持續運作的編碼器 session,編碼參數應該

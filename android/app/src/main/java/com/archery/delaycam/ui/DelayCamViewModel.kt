@@ -82,11 +82,12 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
     private val segmentBuffer = SegmentBuffer(maxAgeMs = 10_000L)
 
     /**
-     * MainActivity calls onCameraFrame() on this directly from its
-     * ImageAnalysis analyzer (the same one gesture detection uses) - see
-     * ContinuousSegmentEncoder's doc comment for why segment production
-     * moved off CameraX's Recorder, and why it's fed this way rather than
-     * its own dedicated camera stream.
+     * MainActivity calls onFrame() on this directly from its ImageAnalysis
+     * analyzer (the same one gesture detection uses) with each frame
+     * already converted to a Bitmap - see ContinuousSegmentEncoder's doc
+     * comment for why segment production moved off CameraX's Recorder,
+     * and why it's fed this way rather than its own dedicated camera
+     * stream.
      */
     val segmentEncoder = ContinuousSegmentEncoder(
         cacheDir = application.cacheDir,
