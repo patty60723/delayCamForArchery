@@ -20,10 +20,10 @@ import java.nio.ByteBuffer
  * prototype's continuousRecorder.js sibling.
  *
  * Binding a second, concurrent CameraX VideoCapture use case just for this
- * would be unreliable across devices (Preview + VideoCapture + ImageAnalysis
- * is already close to what most devices guarantee), so instead of a separate
+ * would be unreliable across devices (Preview + Preview + ImageAnalysis is
+ * already close to what most devices guarantee), so instead of a separate
  * recording pipeline, this taps the SAME rolling-buffer segments
- * RollingSegmentRecorder already produces: it keeps a MediaMuxer open across
+ * ContinuousSegmentEncoder already produces: it keeps a MediaMuxer open across
  * the whole recording and appends each new segment's samples as they finalize
  * (DelayCamViewModel wires this up), finalizing the muxer only when the user
  * stops. This is the same sample-copying approach ClipExporter uses for a
@@ -65,7 +65,7 @@ class ContinuousRecordingSession(private val context: Context) {
         }
     }
 
-    /** Call for every segment RollingSegmentRecorder finalizes while recording is active. */
+    /** Call for every segment ContinuousSegmentEncoder finalizes while recording is active. */
     suspend fun appendSegment(segment: SegmentInfo) = withContext(Dispatchers.IO) {
         mutex.withLock {
             val activeMuxer = muxer ?: return@withLock

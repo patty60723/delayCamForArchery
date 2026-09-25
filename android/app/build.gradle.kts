@@ -65,11 +65,13 @@ dependencies {
     implementation("androidx.navigation:navigation-compose:2.8.1")
 
     // --- CameraX (spec 5.1: capture pipeline) ---
+    // No camera-video: segment recording is a hand-rolled MediaCodec/
+    // MediaMuxer pipeline (ContinuousSegmentEncoder) fed by a plain Preview
+    // use case, not CameraX's Recorder - see that class's doc comment.
     val cameraxVersion = "1.4.0"
     implementation("androidx.camera:camera-core:$cameraxVersion")
     implementation("androidx.camera:camera-camera2:$cameraxVersion")
     implementation("androidx.camera:camera-lifecycle:$cameraxVersion")
-    implementation("androidx.camera:camera-video:$cameraxVersion")
     implementation("androidx.camera:camera-view:$cameraxVersion")
 
     // --- MediaPipe Tasks Vision (spec 5.1/5.3: gesture recognition) ---

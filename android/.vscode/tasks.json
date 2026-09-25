@@ -64,7 +64,8 @@
         "MainActivity:*",
         "DelayCamViewModel:*",
         "GestureEngine:*",
-        "ContinuousRecordingSession:*"
+        "ContinuousRecordingSession:*",
+        "ContinuousSegmentEncoder:*"
       ],
       "isBackground": true,
       "problemMatcher": []

@@ -3,15 +3,13 @@ package com.archery.delaycam.ui
 import android.app.Application
 import android.util.Log
 import androidx.camera.core.Preview
-import androidx.camera.video.Recorder
-import androidx.camera.video.VideoCapture
 import androidx.core.net.toUri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.archery.delaycam.camera.ClipExporter
 import com.archery.delaycam.camera.ContinuousRecordingSession
+import com.archery.delaycam.camera.ContinuousSegmentEncoder
 import com.archery.delaycam.camera.DelayedPlaybackController
-import com.archery.delaycam.camera.RollingSegmentRecorder
 import com.archery.delaycam.camera.SegmentBuffer
 import com.archery.delaycam.camera.SegmentInfo
 import com.archery.delaycam.gallery.ClipEntry
@@ -82,8 +80,13 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
     val replayPlayer: ExoPlayer = ExoPlayer.Builder(application).build()
 
     private val segmentBuffer = SegmentBuffer(maxAgeMs = 10_000L)
-    private val rollingRecorder = RollingSegmentRecorder(
-        context = application,
+
+    /**
+     * MainActivity reaches into this directly (prepare()/setOrientationHint())
+     * from its encoding Preview.SurfaceProvider - see ContinuousSegmentEncoder's
+     * doc comment for why segment production moved off CameraX's Recorder.
+     */
+    val segmentEncoder = ContinuousSegmentEncoder(
         cacheDir = application.cacheDir,
         onSegmentFinalized = ::onSegmentFinalized,
     )
@@ -183,12 +186,6 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
         segmentBuffer.clear()
     }
 
-    /** Called once by MainActivity after it has bound the CameraX use cases. */
-    fun attachVideoCapture(videoCapture: VideoCapture<Recorder>) {
-        rollingRecorder.attach(videoCapture)
-        rollingRecorder.start(viewModelScope)
-    }
-
     fun updateSettings(update: (AppSettings) -> AppSettings) {
         val next = update(_settings.value)
         _settings.value = next
@@ -203,7 +200,7 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
         // the live camera - see triggerSave()'s doc comment.
         val windowSec = settings.delaySec + settings.backtrackSec + REACTION_MARGIN_SEC
         segmentBuffer.setMaxAgeMs(windowSec * 1000L)
-        rollingRecorder.setRingSize(windowSec + 1)
+        segmentEncoder.setRingSize(windowSec + 1)
     }
 
     private fun onSegmentFinalized(segment: SegmentInfo) {
@@ -408,7 +405,7 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
     }
 
     override fun onCleared() {
-        rollingRecorder.stop()
+        segmentEncoder.stop()
         gestureEngine.close()
         continuousRecordingSession.releaseImmediate()
         livePlayer.release()

@@ -10,11 +10,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
-import androidx.camera.video.Quality
-import androidx.camera.video.QualitySelector
-import androidx.camera.video.Recorder
-import androidx.camera.video.VideoCapture
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -76,23 +73,27 @@ class MainActivity : ComponentActivity() {
         try {
             val cameraProvider = awaitCameraProvider()
 
-            // Pinned bitrate: confirmed via on-device logcat that leaving
-            // this to auto-negotiate let consecutive segment Recorder
-            // sessions (RollingSegmentRecorder stops/restarts one every
-            // ~2s) land on genuinely different H.264 SPS profile/level
-            // ("Inconsisted profile/level found in SPS: 64,0,1f vs
-            // ea,8f,2c" in the platform's own log), which is what was
-            // breaking playback/export at segment boundaries. Pinning an
-            // exact target bitrate removes one axis the encoder was free
-            // to renegotiate per session - if segments still drift after
-            // this, the SPS mismatch isn't bitrate-driven and the real fix
-            // is to stop tearing down/rebuilding the encoder every segment
-            // at all (see RollingSegmentRecorder's doc comment).
-            val recorder = Recorder.Builder()
-                .setQualitySelector(QualitySelector.from(Quality.HD))
-                .setTargetVideoEncodingBitRate(8_000_000)
-                .build()
-            val videoCapture = VideoCapture.withOutput(recorder)
+            // Feeds ContinuousSegmentEncoder instead of CameraX's own
+            // Recorder - see that class's doc comment for why: reusing one
+            // Recorder for rapid stop()/start() segment cycling was
+            // confirmed on-device to produce segments with genuinely
+            // inconsistent H.264 SPS profile/level at their boundaries,
+            // which is what was breaking playback. A second Preview use
+            // case (not a VideoCapture) is the standard CameraX pattern for
+            // handing camera frames to a Surface you don't own, like a
+            // MediaCodec encoder's input surface - CameraX does not
+            // auto-correct rotation for it the way PreviewView does, so
+            // the SurfaceRequest's TransformationInfoListener result is
+            // forwarded to setOrientationHint() explicitly.
+            val encodingPreview = Preview.Builder().build()
+            encodingPreview.setSurfaceProvider(ContextCompat.getMainExecutor(this)) { request ->
+                val resolution = request.resolution
+                val surface = viewModel.segmentEncoder.prepare(resolution.width, resolution.height)
+                request.setTransformationInfoListener(ContextCompat.getMainExecutor(this)) { info ->
+                    viewModel.segmentEncoder.setOrientationHint(info.rotationDegrees)
+                }
+                request.provideSurface(surface, ContextCompat.getMainExecutor(this)) { }
+            }
 
             val analysisExecutor = Executors.newSingleThreadExecutor()
             val imageAnalysis = ImageAnalysis.Builder()
@@ -110,10 +111,9 @@ class MainActivity : ComponentActivity() {
                 this,
                 CameraSelector.DEFAULT_FRONT_CAMERA,
                 viewModel.previewUseCase,
-                videoCapture,
+                encodingPreview,
                 imageAnalysis,
             )
-            viewModel.attachVideoCapture(videoCapture)
         } catch (e: Exception) {
             Log.e("MainActivity", "CameraX bind failed", e)
             cameraBound = false

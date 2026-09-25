@@ -33,15 +33,18 @@ GestureRecognizer 全畫面手勢辨識、MediaMuxer 存檔匯出、MediaStore �
 
 ## 已知風險最高的地方(建議優先實機測試/除錯)
 
-1. **`camera/RollingSegmentRecorder.kt`** — CameraX `Recorder` 用 stop()+start()
-   循環切出 1 秒片段檔案。片段交界處理論上會有幾十毫秒的錄影空隙(規格 5.2 有預期到
-   這件事並接受),但實際空隙多大、串接處觀感如何,要實機測。另外 60fps(規格 5.1)
+1. **`camera/ContinuousSegmentEncoder.kt`** — 早期版本用 CameraX `Recorder` 的
+   stop()+start() 循環切片段檔案,實機測試後在 logcat 證實這會讓相鄰片段的 H.264
+   SPS(編碼參數)真的不一致("Inconsisted profile/level found in SPS"),導致延遲
+   畫面在片段交界處卡死/黑畫面。現在改成自己接管 `MediaCodec`,全程只開一個編碼器
+   session、只在關鍵影格處切換輸出檔案,理論上每個片段的編碼參數應該完全一致——但
+   這個版本本身也還沒有實機驗證過,自訂的 `Preview.SurfaceProvider` 也還沒有跟
+   CameraX 的旋轉修正機制一起測過,要留意畫面方向是否正確。另外 60fps(規格 5.1)
    目前沒有透過 `Camera2Interop` 釘死 frame rate range,先跑起來看看裝置預設幀率再說。
 
 2. **`camera/ClipExporter.kt`** — 把多個片段檔案用 `MediaExtractor`+`MediaMuxer`
-   串接成一支輸出 MP4,是這份骨架最有可能出包的地方:每個片段是獨立的錄影 session,
-   理論上編碼器設定一致所以應該能接,但如果串接處出現花屏或黑幀,通常是關鍵幀
-   (keyframe)沒對齊的問題,需要另外處理。
+   串接成一支輸出 MP4。現在片段都來自同一個持續運作的編碼器 session,編碼參數應該
+   一致,串接處出包的機率理論上比舊版低很多,但這個假設也還沒有實機驗證過。
 
 3. **`camera/DelayedPlaybackController.kt`** — 用「N 秒後才把片段加進 ExoPlayer
    播放清單」做出延遲鏡子效果,是很直接地照規格 5.2 字面意思實作,但沒實測過
@@ -76,7 +79,7 @@ Gradle sync 常見卡關狀況、接裝置、Run、看 log、疑難排解)分別
 
 | 檔案 | 對應規格 |
 | --- | --- |
-| `camera/RollingSegmentRecorder.kt` + `SegmentBuffer.kt` | 2.1 / 5.2 常駐延遲緩衝 |
+| `camera/ContinuousSegmentEncoder.kt` + `SegmentBuffer.kt` | 2.1 / 5.2 常駐延遲緩衝 |
 | `camera/DelayedPlaybackController.kt` | 2.1 / 5.2 延遲鏡子播放 |
 | `camera/ClipExporter.kt` + `MediaStoreExport.kt` | 2.2 步驟1 / 6 回溯存檔與檔案管理 |
 | `camera/ContinuousRecordingSession.kt` | 連續錄影開關(新增,非規格原有項目) |
