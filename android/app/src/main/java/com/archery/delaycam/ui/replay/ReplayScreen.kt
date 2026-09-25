@@ -1,5 +1,6 @@
 package com.archery.delaycam.ui.replay
 
+import android.view.LayoutInflater
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -24,6 +25,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.ui.PlayerView
+import com.archery.delaycam.R
 import com.archery.delaycam.ui.DelayCamViewModel
 import kotlinx.coroutines.delay
 
@@ -51,8 +53,9 @@ fun ReplayScreen(viewModel: DelayCamViewModel) {
             // a horizontal flip would render backwards/unreadable.
             modifier = Modifier.fillMaxSize().scale(scaleX = -1f, scaleY = 1f),
             factory = { ctx ->
-                PlayerView(ctx).apply {
-                    useController = false
+                // See LiveScreen.kt's main PlayerView for why this needs the
+                // texture_view-backed layout rather than a plain PlayerView.
+                (LayoutInflater.from(ctx).inflate(R.layout.player_view_texture, null) as PlayerView).apply {
                     resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM
                     player = viewModel.replayPlayer
                 }

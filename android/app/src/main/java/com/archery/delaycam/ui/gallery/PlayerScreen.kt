@@ -5,10 +5,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.weight
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.IconButton
@@ -68,9 +68,17 @@ fun PlayerScreen(
         // bar, timestamps), and a horizontal flip would render that text and
         // control layout backwards. The saved clip file itself is unflipped
         // either way (mirroring only ever happens at display time).
+        //
+        // weight(1f) instead of a fixed aspectRatio(16f/9f): a fixed 16:9
+        // height computed from fillMaxWidth() overflows the screen once
+        // width grows past height in landscape, so the player box (and the
+        // controls below it) got pushed off-screen and looked frozen in
+        // portrait. Filling the remaining Column space and letting
+        // PlayerView's own default letterboxing (RESIZE_MODE_FIT) size the
+        // video within it works in both orientations.
         AndroidView(
             factory = { ctx -> PlayerView(ctx).apply { this.player = player } },
-            modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f),
+            modifier = Modifier.fillMaxWidth().weight(1f),
         )
 
         Row(

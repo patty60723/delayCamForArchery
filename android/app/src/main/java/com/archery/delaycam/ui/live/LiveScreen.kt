@@ -1,5 +1,6 @@
 package com.archery.delaycam.ui.live
 
+import android.view.LayoutInflater
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -32,6 +33,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.ui.PlayerView
+import com.archery.delaycam.R
 import com.archery.delaycam.settings.DominantHand
 import com.archery.delaycam.state.AppState
 import com.archery.delaycam.ui.DelayCamViewModel
@@ -68,8 +70,11 @@ fun LiveScreen(
             // the underlying segment/clip files stay unflipped.
             modifier = Modifier.fillMaxSize().scale(scaleX = -1f, scaleY = 1f),
             factory = { ctx ->
-                PlayerView(ctx).apply {
-                    useController = false
+                // Inflated with surface_type="texture_view" (see the layout
+                // file's comment): a plain PlayerView defaults to a
+                // SurfaceView, which does not render through the scale
+                // transform above and was showing nothing at all.
+                (LayoutInflater.from(ctx).inflate(R.layout.player_view_texture, null) as PlayerView).apply {
                     resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM
                     player = viewModel.livePlayer
                 }
@@ -89,7 +94,16 @@ fun LiveScreen(
         // Small always-live (undelayed) preview, opposite corner from the dominant hand
         // so raising that hand to gesture doesn't cover it.
         AndroidView(
-            factory = { ctx -> PreviewView(ctx) },
+            factory = { ctx ->
+                PreviewView(ctx).apply {
+                    // COMPATIBLE forces a TextureView-backed implementation.
+                    // PreviewView's default (PERFORMANCE) prefers a
+                    // SurfaceView, which - same as LiveScreen's main
+                    // PlayerView above - does not render through the scale
+                    // transform below.
+                    implementationMode = PreviewView.ImplementationMode.COMPATIBLE
+                }
+            },
             update = { previewView -> viewModel.previewUseCase.surfaceProvider = previewView.surfaceProvider },
             // Mirrored for the same reason as the main delayed view above -
             // CameraX's PreviewView does not auto-mirror the front camera.

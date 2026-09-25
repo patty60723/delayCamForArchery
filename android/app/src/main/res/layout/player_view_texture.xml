@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  PlayerView with surface_type="texture_view" instead of the default
+  SurfaceView. Needed anywhere the view is wrapped in a Compose
+  Modifier.scale/rotation (the mirror flip): SurfaceView renders through
+  its own independently-composited surface and does not reliably honor
+  View-hierarchy transforms applied above it (via AndroidView's
+  graphicsLayer), which is why the mirrored live/replay views were
+  rendering blank instead of flipped. TextureView is a regular View and
+  composes correctly with transforms, at a small extra GPU/memory cost.
+-->
+<androidx.media3.ui.PlayerView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    app:surface_type="texture_view"
+    app:use_controller="false" />
