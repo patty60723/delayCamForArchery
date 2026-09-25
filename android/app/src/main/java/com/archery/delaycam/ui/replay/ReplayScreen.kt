@@ -24,6 +24,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.media3.common.Timeline
 import androidx.media3.ui.PlayerView
 import com.archery.delaycam.R
 import com.archery.delaycam.ui.DelayCamViewModel
@@ -35,11 +36,34 @@ fun ReplayScreen(viewModel: DelayCamViewModel) {
     var progress by remember { mutableFloatStateOf(0f) }
 
     LaunchedEffect(Unit) {
+        // Reported the progress bar "looks weird" - it did: the replay is
+        // several SEPARATE segment files added as separate MediaItems in
+        // one playlist (triggerSave() adds one per backtrack segment), but
+        // Player.getDuration()/getCurrentPosition() only ever report the
+        // CURRENT item's duration/position, not the whole playlist's. The
+        // old code above computed progress against just the current item,
+        // so the bar filled 0->100% and snapped back to 0 at every segment
+        // boundary instead of filling once across the whole replay.
+        // Summing every window's duration via the player's Timeline (and
+        // the current item's position within it) gives the real aggregate
+        // progress across all segments.
+        val window = Timeline.Window()
         while (true) {
-            val duration = viewModel.replayPlayer.duration
-            progress = if (duration > 0) {
-                (viewModel.replayPlayer.currentPosition.toFloat() / duration).coerceIn(0f, 1f)
-            } else 0f
+            val player = viewModel.replayPlayer
+            val timeline = player.currentTimeline
+            var totalMs = 0L
+            var elapsedMs = 0L
+            for (i in 0 until timeline.windowCount) {
+                timeline.getWindow(i, window)
+                val windowDurationMs = (window.durationUs / 1000).coerceAtLeast(0L)
+                totalMs += windowDurationMs
+                elapsedMs += when {
+                    i < player.currentMediaItemIndex -> windowDurationMs
+                    i == player.currentMediaItemIndex -> player.currentPosition.coerceAtMost(windowDurationMs)
+                    else -> 0L
+                }
+            }
+            progress = if (totalMs > 0) (elapsedMs.toFloat() / totalMs).coerceIn(0f, 1f) else 0f
             delay(100)
         }
     }
