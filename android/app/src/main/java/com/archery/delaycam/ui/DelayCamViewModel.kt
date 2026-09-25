@@ -41,6 +41,7 @@ import kotlinx.coroutines.withContext
 // shot on the delayed screen - see triggerSave()'s doc comment.
 private const val REACTION_MARGIN_SEC = 5
 private const val TAG = "DelayCamViewModel"
+private const val STALL_THRESHOLD_MS = 3000L
 
 /**
  * Central orchestrator - the native counterpart of the web prototype's
@@ -120,6 +121,7 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch { refreshGallery() }
         viewModelScope.launch { warmupTicker() }
         viewModelScope.launch { recordingElapsedTicker() }
+        viewModelScope.launch { livePlayerStallWatchdog() }
 
         // Model load happens once here (not per-screen-visit) so navigating
         // back to Live doesn't re-init and leak a second recognizer.
@@ -190,6 +192,44 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
         }
         if (_isContinuousRecording.value) {
             viewModelScope.launch { continuousRecordingSession.appendSegment(segment) }
+        }
+    }
+
+    /**
+     * Companion to the livePlayer error listener above, for a different
+     * failure mode: confirmed on-device that a segment-boundary format
+     * inconsistency doesn't always throw a PlaybackException at all - the
+     * error listener never fired, yet the delayed view still went black,
+     * consistent with ExoPlayer getting stuck buffering/stalled on a bad
+     * transition rather than erroring out. Polls whether livePlayer's
+     * playback position is actually advancing while it should be (LIVE,
+     * has items queued, playWhenReady); if it's been stuck at the exact
+     * same position for STALL_THRESHOLD_MS, force the same reset the error
+     * listener does.
+     */
+    private suspend fun livePlayerStallWatchdog() {
+        var lastPositionMs = -1L
+        var lastChangedAtMs = System.currentTimeMillis()
+        while (viewModelScope.isActive) {
+            delay(1000)
+            val watching = _appState.value == AppState.LIVE && livePlayer.mediaItemCount > 0 && livePlayer.playWhenReady
+            if (!watching) {
+                lastPositionMs = -1L
+                lastChangedAtMs = System.currentTimeMillis()
+                continue
+            }
+            val position = livePlayer.currentPosition
+            val now = System.currentTimeMillis()
+            if (position != lastPositionMs) {
+                lastPositionMs = position
+                lastChangedAtMs = now
+            } else if (now - lastChangedAtMs > STALL_THRESHOLD_MS) {
+                Log.w(TAG, "livePlayer stalled at ${position}ms for ${STALL_THRESHOLD_MS}ms+, resetting")
+                livePlayer.stop()
+                livePlayer.clearMediaItems()
+                lastPositionMs = -1L
+                lastChangedAtMs = now
+            }
         }
     }
 
