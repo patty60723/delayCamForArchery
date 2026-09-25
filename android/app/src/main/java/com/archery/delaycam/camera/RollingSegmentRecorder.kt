@@ -20,22 +20,31 @@ import java.io.File
  * cycle through a fixed-size ring in the app's private cache dir (not shown
  * to the user - spec 6 keeps these separate from permanently saved clips).
  *
- * CONFIRMED ON DEVICE (logcat): reusing one Recorder for rapid stop()/
- * start() cycling produces a sustained native "MPEG4Writer: Stop() called
- * but track is not started or stopped" warning at roughly the camera's
- * frame rate (~25/s) for the whole session, not just a blip at each
- * boundary - consistent with frames still draining out of the just-stopped
- * encoder session racing the muxer teardown as the next segment starts.
- * That's the leading suspect for segments coming out corrupt/truncated
- * (the delayed view going black partway through a segment transition).
- * Originally 1000ms; widened to 2000ms to roughly halve how often this
- * race gets a chance to happen, trading some backtrack/delay granularity
- * for it - imperceptible against multi-second delay/backtrack windows.
- * This does not eliminate the race, just makes it less frequent; if
- * segments are still visibly corrupting, the real fix is to stop reusing
- * one Recorder for hard stop/start cycling (e.g. re-encode through
- * MediaCodec directly instead of relying on CameraX's Recorder for
- * sub-clip boundaries).
+ * CONFIRMED ON DEVICE (logcat), root cause and all: reusing one Recorder
+ * for rapid stop()/start() cycling produces a sustained native
+ * "MPEG4Writer: Stop() called but track is not started or stopped"
+ * warning at roughly the camera's frame rate, for the whole session, not
+ * just a blip at each boundary - and, decisively, "[Utils] Inconsisted
+ * profile/level found in SPS: 64,0,1f vs ea,8f,2c": consecutive segment
+ * Recorder sessions on this device really were landing on different
+ * H.264 SPS profile/level, not just racing at the muxer/log level. That's
+ * what was breaking playback/export at segment boundaries (the delayed
+ * view going black partway through a segment transition).
+ * Two mitigations layered on top of that finding so far:
+ *  - segmentDurationMs widened from 1000ms to 2000ms, to roughly halve
+ *    how often the stop/start boundary (and this race) happens per
+ *    second of footage - confirmed on a later logcat to actually halve
+ *    the warning rate, but does not eliminate the underlying SPS drift.
+ *  - MainActivity's Recorder.Builder now pins setTargetVideoEncodingBitRate
+ *    explicitly, removing one axis the encoder was free to renegotiate
+ *    per session, in case the drift was bitrate-adaptation-driven.
+ * If segments are still visibly corrupting after both, the SPS drift
+ * isn't bitrate-driven and the only real fix is to stop tearing down/
+ * rebuilding the encoder every segment at all - keep one MediaCodec
+ * encoder alive continuously and only rotate the MediaMuxer/output file
+ * at segment boundaries (requesting a sync frame right at the cut), which
+ * means bypassing CameraX's Recorder for this rather than configuring it
+ * differently.
  *
  * NOT YET VERIFIED ON DEVICE. Hitting the spec's 60fps target (5.1) needs
  * the camera session's frame rate range pinned via Camera2Interop
