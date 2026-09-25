@@ -35,7 +35,10 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-private const val MARGIN_SEC = 2 // extra history kept beyond what delay/backtrack currently need
+// Extra history kept on top of delaySec+backtrackSec, as slack for the time
+// it actually takes an archer to notice+react+gesture after watching their
+// shot on the delayed screen - see triggerSave()'s doc comment.
+private const val REACTION_MARGIN_SEC = 5
 private const val TAG = "DelayCamViewModel"
 
 /**
@@ -149,10 +152,13 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
     }
 
     private fun applyBufferWindow(settings: AppSettings) {
-        val maxAgeMs = (maxOf(settings.delaySec, settings.backtrackSec) + MARGIN_SEC) * 1000L
-        segmentBuffer.setMaxAgeMs(maxAgeMs)
-        val ringSize = (maxOf(settings.delaySec, settings.backtrackSec) + MARGIN_SEC) + 1
-        rollingRecorder.setRingSize(ringSize)
+        // Must cover delaySec+backtrackSec, not just whichever is larger: by
+        // the time the archer reacts to what the delayed screen shows, the
+        // shot they want captured is already delaySec+backtrackSec behind
+        // the live camera - see triggerSave()'s doc comment.
+        val windowSec = settings.delaySec + settings.backtrackSec + REACTION_MARGIN_SEC
+        segmentBuffer.setMaxAgeMs(windowSec * 1000L)
+        rollingRecorder.setRingSize(windowSec + 1)
     }
 
     private fun onSegmentFinalized(segment: SegmentInfo) {
@@ -228,12 +234,26 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    /** Manual button and gesture trigger share this one path (spec 3.1). */
+    /**
+     * Manual button and gesture trigger share this one path (spec 3.1).
+     *
+     * backtrackSec is measured from what's currently ON THE DELAYED SCREEN
+     * (now - delaySec), not from the raw "now" the trigger fires at. An
+     * archer decides to save AFTER watching their shot play out on the
+     * delay - by the time they react and gesture, real time has already
+     * moved on by delaySec (to see it) plus however long they took to
+     * react, so anchoring to raw "now" silently lost the shot itself once
+     * that reaction time exceeded backtrackSec - delaySec (trivially true
+     * whenever delaySec >= backtrackSec, but also just whenever reacting
+     * took a couple of seconds). The saved/replayed clip still runs through
+     * to the actual present moment (now), just starting further back.
+     */
     fun triggerSave() {
         if (_appState.value != AppState.LIVE) return
         val currentSettings = settings.value
         val now = System.currentTimeMillis()
-        val segments = segmentBuffer.segmentsCoveringRange(now - currentSettings.backtrackSec * 1000L, now)
+        val shotReferenceMs = now - currentSettings.delaySec * 1000L
+        val segments = segmentBuffer.segmentsCoveringRange(shotReferenceMs - currentSettings.backtrackSec * 1000L, now)
         if (segments.isEmpty()) {
             _toast.value = "緩衝畫面還不夠,請再等一下"
             return
