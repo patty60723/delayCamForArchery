@@ -1,5 +1,6 @@
 package com.archery.delaycam.ui.live
 
+import android.content.res.Configuration
 import android.view.LayoutInflater
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.background
@@ -29,6 +30,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -52,6 +54,7 @@ fun LiveScreen(
     onOpenGallery: () -> Unit,
 ) {
     val settings by viewModel.settings.collectAsState()
+    val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
     val warmupRemaining by viewModel.warmupRemainingSec.collectAsState()
     val gestureStatus by viewModel.gestureStatus.collectAsState()
     val appState by viewModel.appState.collectAsState()
@@ -107,9 +110,28 @@ fun LiveScreen(
             update = { previewView -> viewModel.previewUseCase.surfaceProvider = previewView.surfaceProvider },
             // Mirrored for the same reason as the main delayed view above -
             // CameraX's PreviewView does not auto-mirror the front camera.
+            // Corner is always opposite the dominant hand (spec: raising
+            // that hand to gesture shouldn't cover it); which corner
+            // (top/bottom) depends on orientation - reported that in
+            // landscape, sitting near the top put it awkwardly close to
+            // vertical-center given how short landscape height is, so
+            // landscape uses the bottom corner instead. Portrait keeps the
+            // top corner unchanged.
             modifier = Modifier
-                .align(if (settings.dominantHand == DominantHand.LEFT) Alignment.TopEnd else Alignment.TopStart)
-                .padding(top = 72.dp, start = 12.dp, end = 12.dp)
+                .align(
+                    when {
+                        settings.dominantHand == DominantHand.LEFT && isLandscape -> Alignment.BottomEnd
+                        settings.dominantHand == DominantHand.LEFT -> Alignment.TopEnd
+                        isLandscape -> Alignment.BottomStart
+                        else -> Alignment.TopStart
+                    }
+                )
+                .padding(
+                    top = if (isLandscape) 0.dp else 72.dp,
+                    bottom = if (isLandscape) 12.dp else 0.dp,
+                    start = 12.dp,
+                    end = 12.dp,
+                )
                 .width(110.dp)
                 .aspectRatio(3f / 4f)
                 .background(Color.Black, RoundedCornerShape(12.dp))
