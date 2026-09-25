@@ -1,4 +1,4 @@
-# 用 VS Code 開發 / 建置 / 跑到 Pixel 9(不裝 Android Studio)
+# 用 VS Code 開發 / 建置 / 跑到實機(不裝 Android Studio)
 
 Android Studio 本質上是「IntelliJ + Android 外掛 + SDK Manager 的 GUI」——真正
 做事的是 **Gradle**(這個專案已經有 `./gradlew`,是用真的 `gradle wrapper` 指令
@@ -58,9 +58,12 @@ Android Gradle Plugin 8.6(見 `app/build.gradle.kts`)需要 JDK 17。裝
 這個 repo 的 `android/.vscode/extensions.json` 已經列了以上建議清單,VS Code
 開啟 `android/` 資料夾時應該會自動跳出「要不要安裝建議的外掛」提示。
 
-## 4. 接上 Pixel 9
+## 4. 接上你的 Android 手機
 
-- **USB 偵錯**:手機「設定 → 關於手機」連點版本號 7 次開發者選項,
+沒有指定機型/廠牌的要求,只要是 Android 10(API 29)以上的裝置就符合這個專案
+的 minSdk。
+
+- **USB 偵錯**:手機「設定 → 關於手機」連點版本號 7 次開啟開發者選項,
   「開發人員選項 → USB 偵錯」打開,USB 接電腦,手機上會跳授權提示,同意。
   `adb devices` 應該要列出裝置。
 - **或無線偵錯**(Android 11+,不用接線):開發人員選項裡的「無線偵錯」,

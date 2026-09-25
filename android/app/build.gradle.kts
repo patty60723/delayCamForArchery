@@ -12,8 +12,8 @@ android {
         applicationId = "com.archery.delaycam"
         // 29+ only: lets ClipExporter use the scoped-storage MediaStore API
         // unconditionally (no legacy WRITE_EXTERNAL_STORAGE + FileProvider
-        // path to also write and test). Pixel 9 ships Android 14+, so this
-        // costs nothing for the actual test target.
+        // path to also write and test). Android 10 (API 29) shipped in 2019,
+        // so this costs nothing on any reasonably current test device.
         minSdk = 29
         targetSdk = 34
         versionCode = 1

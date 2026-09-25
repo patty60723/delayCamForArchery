@@ -20,7 +20,8 @@ GestureRecognizer 全畫面手勢辨識、MediaMuxer 存檔匯出、MediaStore �
 - ❌ **完全沒有真的 build 過、更沒有在裝置或模擬器上跑過一次。** 邏輯是照著已經在瀏覽器
   裡驗證過的網頁版 prototype(`/index.html` 等)的行為去translate,但 Android 原生
   API(CameraX Recorder、MediaMuxer 串接、MediaPipe Android AAR、ExoPlayer 播放清單)
-  的實際行為只能等你在 Android Studio 裡 build 出來、裝到 Pixel 9 上跑才知道。
+  的實際行為只能等你在 Android Studio(或見下方 VS Code 那條路)裡 build 出來、
+  裝到實機上跑才知道。
 
 換句話說:這是一份「骨架」,不是「能動的 App」——架構、檔案分工、對應規格的邏輯都在,
 但請預期第一次 build/跑會需要除錯。下面列出我認為風險最高、最可能需要修的幾個地方。
@@ -63,8 +64,8 @@ Studio 比起來有哪些落差)。用 Android Studio 的步驟:
    Studio 通常會提示更新,接受即可)。
 3. 手勢辨識模型(`gesture_recognizer.task`)已經放在 `app/src/main/assets/` 裡了,
    不用另外下載;之後要換模型版本的話見該資料夾 README。
-4. 接上 Pixel 9(USB 或無線偵錯),直接 Run。minSdk 設 29,Pixel 9 的 Android 版本
-   絕對夠。
+4. 接上一支 Android 手機或平板(USB 或無線偵錯),直接 Run。minSdk 設 29
+   (Android 10+,2019 年後的裝置大多沒問題),沒有特別要求機型或廠牌。
 
 ## 對應規格書章節
 
