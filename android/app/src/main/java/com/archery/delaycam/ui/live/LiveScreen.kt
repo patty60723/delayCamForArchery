@@ -26,6 +26,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -59,7 +60,13 @@ fun LiveScreen(
 
         // Delayed mirror (spec 2.1): the ExoPlayer fed by DelayedPlaybackController.
         AndroidView(
-            modifier = Modifier.fillMaxSize(),
+            // Mirrored (scaleX = -1) so it reads like an actual mirror, not
+            // "how someone facing you sees you" - the whole point of the
+            // delay mirror (spec 2.1). Front-camera capture is NOT mirrored
+            // at the sensor/recording level (matches every camera app's
+            // saved-video convention), so this is purely a display-time flip;
+            // the underlying segment/clip files stay unflipped.
+            modifier = Modifier.fillMaxSize().scale(scaleX = -1f, scaleY = 1f),
             factory = { ctx ->
                 PlayerView(ctx).apply {
                     useController = false
@@ -84,12 +91,15 @@ fun LiveScreen(
         AndroidView(
             factory = { ctx -> PreviewView(ctx) },
             update = { previewView -> viewModel.previewUseCase.surfaceProvider = previewView.surfaceProvider },
+            // Mirrored for the same reason as the main delayed view above -
+            // CameraX's PreviewView does not auto-mirror the front camera.
             modifier = Modifier
                 .align(if (settings.dominantHand == DominantHand.LEFT) Alignment.TopEnd else Alignment.TopStart)
                 .padding(top = 72.dp, start = 12.dp, end = 12.dp)
                 .width(110.dp)
                 .aspectRatio(3f / 4f)
-                .background(Color.Black, RoundedCornerShape(12.dp)),
+                .background(Color.Black, RoundedCornerShape(12.dp))
+                .scale(scaleX = -1f, scaleY = 1f),
         )
 
         Row(

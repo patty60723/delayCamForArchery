@@ -63,6 +63,11 @@ fun PlayerScreen(
             Text(clipName, color = Color.White, maxLines = 1)
         }
 
+        // Deliberately NOT mirrored, unlike LiveScreen/ReplayScreen: this
+        // PlayerView shows its default transport controls (play/pause, scrub
+        // bar, timestamps), and a horizontal flip would render that text and
+        // control layout backwards. The saved clip file itself is unflipped
+        // either way (mirroring only ever happens at display time).
         AndroidView(
             factory = { ctx -> PlayerView(ctx).apply { this.player = player } },
             modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f),

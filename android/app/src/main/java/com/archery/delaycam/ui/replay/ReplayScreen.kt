@@ -19,6 +19,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -43,7 +44,12 @@ fun ReplayScreen(viewModel: DelayCamViewModel) {
 
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
         AndroidView(
-            modifier = Modifier.fillMaxSize(),
+            // Mirrored - see LiveScreen.kt's main PlayerView for why. Keeps
+            // the "still looking in the mirror" continuity right after the
+            // shot; the Gallery's player deliberately does NOT mirror (see
+            // PlayerScreen.kt) since it has visible transport controls that
+            // a horizontal flip would render backwards/unreadable.
+            modifier = Modifier.fillMaxSize().scale(scaleX = -1f, scaleY = 1f),
             factory = { ctx ->
                 PlayerView(ctx).apply {
                     useController = false
