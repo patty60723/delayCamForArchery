@@ -23,6 +23,7 @@ import com.archery.delaycam.state.AppState
 import com.archery.delaycam.util.clipDisplayName
 import com.archery.delaycam.util.sessionDisplayName
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
@@ -134,6 +135,27 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
         replayPlayer.addListener(object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
                 if (playbackState == Player.STATE_ENDED) onReplayFinished()
+            }
+        })
+
+        // livePlayer's playlist is a running sequence of independently-
+        // recorded 1s segment files (see DelayedPlaybackController) -
+        // consecutive segments come from separate CameraX Recorder
+        // sessions and can carry slightly different codec init data at
+        // their boundary, which is a known risk (see that class's doc
+        // comment). With no listener at all, a decode error there used to
+        // just silently stop the player - the delayed view would play the
+        // first segment and then go permanently black with nothing logged.
+        // This at least surfaces the error and self-heals: reset the
+        // player, and the next already-scheduled segments (the buffer
+        // keeps recording/scheduling regardless) repopulate the playlist
+        // within about a second, so the symptom becomes a brief blip
+        // instead of a dead screen.
+        livePlayer.addListener(object : Player.Listener {
+            override fun onPlayerError(error: PlaybackException) {
+                Log.e(TAG, "livePlayer error, resetting delayed playback", error)
+                livePlayer.stop()
+                livePlayer.clearMediaItems()
             }
         })
     }
