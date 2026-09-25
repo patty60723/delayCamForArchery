@@ -110,4 +110,5 @@ adb logcat --pid=$(adb shell pidof -s com.archery.delaycam)
   的除錯工具,都要用命令列 `adb` 手動做對應的事。
 
 如果之後覺得這些落差太麻煩,隨時可以把同一個 `android/` 資料夾直接用 Android
-Studio 開起來——兩邊共用同一份 Gradle 專案,不會互相干擾。
+Studio 開起來——兩邊共用同一份 Gradle 專案,不會互相干擾,步驟見
+[`android-studio-setup.md`](android-studio-setup.md)。

@@ -54,18 +54,18 @@ GestureRecognizer 全畫面手勢辨識、MediaMuxer 存檔匯出、MediaStore �
 
 ## 建置步驟
 
-用 Android Studio 開最省事;不想裝 Android Studio、只想用 VS Code + 命令列的話,
-見 [`docs/vscode-setup.md`](docs/vscode-setup.md)(裝哪些 SDK 命令列工具、VS Code
-外掛、`.vscode/tasks.json` 有哪些現成的 build/install/logcat 工作、跟 Android
-Studio 比起來有哪些落差)。用 Android Studio 的步驟:
+兩條路線都是開 `android/` 這個資料夾(不是整個 repo 根目錄),完整步驟(含
+Gradle sync 常見卡關狀況、接裝置、Run、看 log、疑難排解)分別寫在:
 
-1. 用 Android Studio 開啟 `android/` 這個資料夾(不是整個 repo 根目錄)。
-2. 讓它自動同步/視需要升級 AGP、Gradle(build.gradle.kts 裡寫的版本是已知穩定版,
-   Studio 通常會提示更新,接受即可)。
-3. 手勢辨識模型(`gesture_recognizer.task`)已經放在 `app/src/main/assets/` 裡了,
-   不用另外下載;之後要換模型版本的話見該資料夾 README。
-4. 接上一支 Android 手機或平板(USB 或無線偵錯),直接 Run。minSdk 設 29
-   (Android 10+,2019 年後的裝置大多沒問題),沒有特別要求機型或廠牌。
+- [`docs/android-studio-setup.md`](docs/android-studio-setup.md) — 最省事,
+  Android Studio 會自動幫你裝好 JDK 與大半的 SDK 元件。
+- [`docs/vscode-setup.md`](docs/vscode-setup.md) — 不想裝 Android Studio、只想
+  用 VS Code + 命令列的話走這條,但要自己手動裝 SDK 命令列工具,而且沒有中斷點
+  除錯、Logcat 視窗等 Studio 內建工具。
+
+手勢辨識模型(`gesture_recognizer.task`)兩條路線都不用另外下載,已經包在
+`app/src/main/assets/` 裡了。minSdk 設 29(Android 10+,2019 年後的裝置大多
+沒問題),沒有特別要求機型或廠牌。
 
 ## 對應規格書章節
 
