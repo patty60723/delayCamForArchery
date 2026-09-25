@@ -82,8 +82,17 @@ private fun ClipCard(clip: ClipEntry, onClick: () -> Unit) {
             val retriever = MediaMetadataRetriever()
             try {
                 retriever.setDataSource(context, clip.uri)
-                retriever.frameAtTime
-            } catch (e: Exception) {
+                // Scaled instead of frameAtTime()'s full source resolution:
+                // a raw concatenated export can be several minutes of HD
+                // video, and decoding a full-res frame per grid card was a
+                // plausible OutOfMemoryError source right after a batch of
+                // saves. A grid card only ever needs a small bitmap anyway.
+                retriever.getScaledFrameAtTime(0L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC, 320, 180)
+            } catch (e: Throwable) {
+                // Throwable, not Exception: also guards against
+                // OutOfMemoryError from a corrupt or oversized frame - this
+                // card just shows no thumbnail rather than taking the whole
+                // app down.
                 null
             } finally {
                 retriever.release()

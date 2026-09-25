@@ -283,7 +283,15 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
     }
 
     suspend fun refreshGallery() {
-        _galleryClips.value = galleryRepository.listClips()
+        _galleryClips.value = try {
+            galleryRepository.listClips()
+        } catch (e: Exception) {
+            // MediaStore query failing (e.g. a transient content-provider
+            // hiccup) used to propagate straight out of GalleryScreen's
+            // LaunchedEffect and crash the whole app on opening Gallery.
+            Log.e(TAG, "refreshGallery failed", e)
+            emptyList()
+        }
     }
 
     fun deleteClip(uri: android.net.Uri) {
