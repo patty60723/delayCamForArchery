@@ -132,11 +132,24 @@ class ContinuousSegmentEncoder(
     fun onFrame(bitmap: Bitmap) {
         configureIfNeeded(bitmap.width, bitmap.height)
         val surface = inputSurface ?: return
+        // Timed to test one theory for the remaining periodic stalls: this
+        // Surface is the encoder's input, backed by a small buffer pool
+        // that MediaCodec itself drains internally - if the drain thread is
+        // stuck inside a slow MediaMuxer call (see the timing added in
+        // startNewSegment/finalizeCurrentSegment below) and MediaCodec's
+        // internal output queue backs up as a result, lockHardwareCanvas()
+        // here could block waiting for a free input buffer, which would
+        // mean actual frame capture pauses too - not just the file cut.
+        val lockStartNs = System.nanoTime()
         val canvas = try {
             surface.lockHardwareCanvas()
         } catch (e: Exception) {
             Log.w(TAG, "lockHardwareCanvas failed, dropping this frame", e)
             return
+        }
+        val lockMs = (System.nanoTime() - lockStartNs) / 1_000_000
+        if (lockMs > 100) {
+            Log.w(TAG, "lockHardwareCanvas blocked for ${lockMs}ms - encoder input surface backpressure")
         }
         try {
             canvas.drawBitmap(bitmap, 0f, 0f, null)
@@ -244,13 +257,27 @@ class ContinuousSegmentEncoder(
     private fun startNewSegment(c: MediaCodec, startedAtMs: Long) {
         val file = segmentFile(segmentIndex)
         segmentIndex = (segmentIndex + 1) % ringSize
+        // Timed alongside finalizeCurrentSegment()'s stop()/release() timing
+        // below: log-timestamp analysis of a real test run found ~650ms of
+        // wall-clock time unaccounted for by the segment's own recorded
+        // duration, roughly every 30s - meaning some native call on this
+        // drain thread blocked for that long. It has to be one of these
+        // MediaMuxer calls (constructor, addTrack, start) or the stop/
+        // release pair in finalizeCurrentSegment(); this narrows down which.
+        val ctorStartNs = System.nanoTime()
         val newMuxer = MediaMuxer(file.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+        val ctorMs = (System.nanoTime() - ctorStartNs) / 1_000_000
         // No orientation hint needed: the Bitmap onFrame() draws is already
         // upright (see class doc), unlike the two earlier attempts which
         // fed the encoder raw sensor-orientation frames.
         try {
+            val trackStartNs = System.nanoTime()
             muxerTrackIndex = newMuxer.addTrack(c.outputFormat)
             newMuxer.start()
+            val trackMs = (System.nanoTime() - trackStartNs) / 1_000_000
+            if (ctorMs > 100 || trackMs > 100) {
+                Log.w(TAG, "slow muxer startup for ${file.name}: ctor=${ctorMs}ms addTrack+start=${trackMs}ms")
+            }
         } catch (e: Exception) {
             // addTrack/start() throwing would otherwise leak newMuxer's
             // native resources - it never got assigned to the `muxer`
@@ -270,6 +297,11 @@ class ContinuousSegmentEncoder(
         muxer = null
         currentSegmentFile = null
         if (file == null) return
+        // See the timing added in startNewSegment() - stop()/release() here
+        // are the other candidates for the ~650ms of unaccounted wall-clock
+        // time found by comparing consecutive "segment finalized" log
+        // timestamps against each segment's own recorded duration.
+        val stopStartNs = System.nanoTime()
         try {
             m.stop()
         } catch (e: Exception) {
@@ -279,11 +311,17 @@ class ContinuousSegmentEncoder(
             // leaking the muxer's native resources on every occurrence
             // (fd/encoder-adjacent handles that would only add up over a
             // long session, but never got cleaned up).
-            Log.w(TAG, "muxer.stop() failed for $file, dropping this segment", e)
+            Log.w(TAG, "muxer.stop() failed for $file after ${(System.nanoTime() - stopStartNs) / 1_000_000}ms, dropping this segment", e)
             try { m.release() } catch (_: Exception) {}
             return
         }
+        val stopMs = (System.nanoTime() - stopStartNs) / 1_000_000
+        val releaseStartNs = System.nanoTime()
         m.release()
+        val releaseMs = (System.nanoTime() - releaseStartNs) / 1_000_000
+        if (stopMs > 100 || releaseMs > 100) {
+            Log.w(TAG, "slow muxer teardown for ${file.name}: stop=${stopMs}ms release=${releaseMs}ms")
+        }
         val info = SegmentInfo(file, segmentStartedAtMs, endedAtMs)
         // Diagnostic for the still-remaining periodic stalls (~1 in 7
         // segments, no clear signal on which one or why): logging every
