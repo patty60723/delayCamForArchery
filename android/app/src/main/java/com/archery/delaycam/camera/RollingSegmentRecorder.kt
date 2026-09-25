@@ -16,26 +16,38 @@ import kotlinx.coroutines.launch
 import java.io.File
 
 /**
- * Rolling buffer (spec 2.1 / 5.2): records to short, ~1s segment files that
+ * Rolling buffer (spec 2.1 / 5.2): records to short, ~2s segment files that
  * cycle through a fixed-size ring in the app's private cache dir (not shown
  * to the user - spec 6 keeps these separate from permanently saved clips).
  *
- * NOT YET VERIFIED ON DEVICE. Two things specifically need checking once
- * this builds and runs:
- *  - The stop()-then-start() transition between segments takes CameraX a few
- *    tens of milliseconds, so there's a small recording gap at each segment
- *    boundary. Spec 5.2 explicitly accepts this ("片段串接處可能有極短的不
- *    連續感") for the MVP, but the actual gap size should be measured.
- *  - Hitting the spec's 60fps target (5.1) needs the camera session's frame
- *    rate range pinned via Camera2Interop (CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE)
- *    on the Recorder's SessionConfig - not wired up here yet. Without it,
- *    CameraX will pick a device-default rate.
+ * CONFIRMED ON DEVICE (logcat): reusing one Recorder for rapid stop()/
+ * start() cycling produces a sustained native "MPEG4Writer: Stop() called
+ * but track is not started or stopped" warning at roughly the camera's
+ * frame rate (~25/s) for the whole session, not just a blip at each
+ * boundary - consistent with frames still draining out of the just-stopped
+ * encoder session racing the muxer teardown as the next segment starts.
+ * That's the leading suspect for segments coming out corrupt/truncated
+ * (the delayed view going black partway through a segment transition).
+ * Originally 1000ms; widened to 2000ms to roughly halve how often this
+ * race gets a chance to happen, trading some backtrack/delay granularity
+ * for it - imperceptible against multi-second delay/backtrack windows.
+ * This does not eliminate the race, just makes it less frequent; if
+ * segments are still visibly corrupting, the real fix is to stop reusing
+ * one Recorder for hard stop/start cycling (e.g. re-encode through
+ * MediaCodec directly instead of relying on CameraX's Recorder for
+ * sub-clip boundaries).
+ *
+ * NOT YET VERIFIED ON DEVICE. Hitting the spec's 60fps target (5.1) needs
+ * the camera session's frame rate range pinned via Camera2Interop
+ * (CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE) on the Recorder's
+ * SessionConfig - not wired up here yet. Without it, CameraX will pick a
+ * device-default rate.
  */
 class RollingSegmentRecorder(
     private val context: Context,
     private val cacheDir: File,
     private val onSegmentFinalized: (SegmentInfo) -> Unit,
-    private val segmentDurationMs: Long = 1000L,
+    private val segmentDurationMs: Long = 2000L,
     private var ringSize: Int = 10,
 ) {
     private var videoCapture: VideoCapture<Recorder>? = null
