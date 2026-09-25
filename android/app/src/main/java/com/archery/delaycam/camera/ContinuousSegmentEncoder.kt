@@ -80,7 +80,23 @@ private const val SEGMENT_TARGET_MS = 2000L
  * keep up with). Worth revisiting once the pipeline is confirmed to
  * actually work at all.
  *
- * NOT YET VERIFIED ON DEVICE.
+ * Confirmed on-device that this version does eliminate the SPS/PPS
+ * mismatch that plagued the old Recorder-based approach - zero
+ * occurrences in a full test session that previously saw one every
+ * reset. A small number of stalls (caught and recovered by
+ * DelayCamViewModel's watchdog/error-listener) still happened, at a much
+ * lower rate. A closer pass over this class for that found two real
+ * robustness gaps unrelated to SPS drift, now fixed: drainLoop()'s
+ * per-frame write/cut logic had no exception handling at all, so a
+ * transient MediaMuxer failure (disk hiccup, addTrack()/start()
+ * throwing) would crash this whole background thread - and, since it's
+ * uncaught, the app - instead of just losing one segment; and a failed
+ * muxer.stop() (already caught) skipped release(), leaking that muxer's
+ * native resources every time it happened. Neither is confirmed as the
+ * cause of the remaining rare stalls, but both were real bugs regardless
+ * and are the most likely remaining candidates.
+ *
+ * NOT YET VERIFIED ON DEVICE (the fixes in the paragraph above).
  */
 class ContinuousSegmentEncoder(
     private val cacheDir: File,
@@ -182,27 +198,45 @@ class ContinuousSegmentEncoder(
             // fresh each time it needs it, so no separate handling needed.
             if (index < 0) continue
 
-            val buffer = c.getOutputBuffer(index)
-            val isKeyFrame = bufferInfo.flags and MediaCodec.BUFFER_FLAG_KEY_FRAME != 0
-            val isCodecConfig = bufferInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0
-            if (buffer != null && bufferInfo.size > 0 && !isCodecConfig) {
-                val now = System.currentTimeMillis()
-                if (muxer == null) {
-                    // Can't start a muxer without a sync sample as its first
-                    // write - drop samples until the first keyframe, which
-                    // for an H.264 encoder is always the very first frame.
-                    if (isKeyFrame) startNewSegment(c, now)
-                } else if (isKeyFrame && now >= nextCutAtMs) {
-                    finalizeCurrentSegment(now)
-                    startNewSegment(c, now)
+            // Found on a closer pass while digging into the occasional
+            // still-remaining stall: this whole block used to run with no
+            // try/catch at all. A transient MediaMuxer failure here (disk
+            // hiccup, addTrack/start() throwing) would propagate uncaught
+            // out of this background thread - which crashes the whole app,
+            // not just this one segment. Catching it and dropping just the
+            // current segment (the next keyframe starts a fresh one, same
+            // as the normal bootstrap path) keeps a rare native hiccup from
+            // taking down the delayed view - or the app - entirely.
+            try {
+                val buffer = c.getOutputBuffer(index)
+                val isKeyFrame = bufferInfo.flags and MediaCodec.BUFFER_FLAG_KEY_FRAME != 0
+                val isCodecConfig = bufferInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0
+                if (buffer != null && bufferInfo.size > 0 && !isCodecConfig) {
+                    val now = System.currentTimeMillis()
+                    if (muxer == null) {
+                        // Can't start a muxer without a sync sample as its
+                        // first write - drop samples until the first
+                        // keyframe, which for an H.264 encoder is always
+                        // the very first frame.
+                        if (isKeyFrame) startNewSegment(c, now)
+                    } else if (isKeyFrame && now >= nextCutAtMs) {
+                        finalizeCurrentSegment(now)
+                        startNewSegment(c, now)
+                    }
+                    muxer?.let { m ->
+                        buffer.position(bufferInfo.offset)
+                        buffer.limit(bufferInfo.offset + bufferInfo.size)
+                        m.writeSampleData(muxerTrackIndex, buffer, bufferInfo)
+                    }
                 }
-                muxer?.let { m ->
-                    buffer.position(bufferInfo.offset)
-                    buffer.limit(bufferInfo.offset + bufferInfo.size)
-                    m.writeSampleData(muxerTrackIndex, buffer, bufferInfo)
-                }
+            } catch (e: Exception) {
+                Log.w(TAG, "segment write/cut failed, dropping current segment and continuing", e)
+                muxer?.let { m -> try { m.release() } catch (_: Exception) {} }
+                muxer = null
+                currentSegmentFile = null
+            } finally {
+                c.releaseOutputBuffer(index, false)
             }
-            c.releaseOutputBuffer(index, false)
         }
         finalizeCurrentSegment(System.currentTimeMillis())
     }
@@ -214,8 +248,16 @@ class ContinuousSegmentEncoder(
         // No orientation hint needed: the Bitmap onFrame() draws is already
         // upright (see class doc), unlike the two earlier attempts which
         // fed the encoder raw sensor-orientation frames.
-        muxerTrackIndex = newMuxer.addTrack(c.outputFormat)
-        newMuxer.start()
+        try {
+            muxerTrackIndex = newMuxer.addTrack(c.outputFormat)
+            newMuxer.start()
+        } catch (e: Exception) {
+            // addTrack/start() throwing would otherwise leak newMuxer's
+            // native resources - it never got assigned to the `muxer`
+            // field, so nothing else would ever release it.
+            try { newMuxer.release() } catch (_: Exception) {}
+            throw e
+        }
         muxer = newMuxer
         currentSegmentFile = file
         segmentStartedAtMs = startedAtMs
@@ -232,8 +274,13 @@ class ContinuousSegmentEncoder(
             m.stop()
         } catch (e: Exception) {
             // Can happen for a near-empty final segment on shutdown - not
-            // worth surfacing as a save failure, just drop this one segment.
+            // worth surfacing as a save failure, just drop this one
+            // segment. Still release() it though - this used to skip that,
+            // leaking the muxer's native resources on every occurrence
+            // (fd/encoder-adjacent handles that would only add up over a
+            // long session, but never got cleaned up).
             Log.w(TAG, "muxer.stop() failed for $file, dropping this segment", e)
+            try { m.release() } catch (_: Exception) {}
             return
         }
         m.release()
