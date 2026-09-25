@@ -285,6 +285,15 @@ class ContinuousSegmentEncoder(
         }
         m.release()
         val info = SegmentInfo(file, segmentStartedAtMs, endedAtMs)
+        // Diagnostic for the still-remaining periodic stalls (~1 in 7
+        // segments, no clear signal on which one or why): logging every
+        // segment's actual duration and file size. A degenerate segment
+        // (near-zero duration or suspiciously small size compared to its
+        // neighbors) landing in the delayed view's playlist would be a
+        // concrete, checkable explanation for ExoPlayer getting stuck
+        // transitioning into it - this makes that visible instead of
+        // guessed at.
+        Log.d(TAG, "segment finalized: ${file.name} duration=${endedAtMs - segmentStartedAtMs}ms size=${file.length()}B")
         // onSegmentFinalized ultimately touches livePlayer (an ExoPlayer,
         // confined to the thread that created it - see DelayCamViewModel's
         // GestureEngine callback fix for the exact crash this avoids), but

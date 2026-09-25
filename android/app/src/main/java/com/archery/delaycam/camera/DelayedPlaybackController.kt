@@ -2,10 +2,13 @@ package com.archery.delaycam.camera
 
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import androidx.core.net.toUri
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+
+private const val TAG = "DelayedPlaybackController"
 
 /**
  * Drives the "always N seconds behind" delay mirror (spec 2.1) by feeding an
@@ -31,7 +34,17 @@ class DelayedPlaybackController(
 
     fun onSegmentFinalized(segment: SegmentInfo) {
         val path = segment.file.absolutePath
-        if (!scheduled.add(path)) return
+        if (!scheduled.add(path)) {
+            // Diagnostic for the still-remaining periodic stalls: this
+            // path is one of the ring buffer's reused filenames - if this
+            // ever fires, an earlier scheduled entry for the same slot
+            // hadn't fired yet when it wrapped back around, meaning this
+            // segment gets silently dropped (never reaches the player) and
+            // the ring buffer is about to overwrite the file the dropped
+            // entry still pointed at. Concrete, checkable cause if seen.
+            Log.w(TAG, "segment $path already scheduled - dropping this one (ring buffer wrapped before the earlier entry fired)")
+            return
+        }
         val fireAtMs = segment.endedAtMs + getDelaySecMs()
         val waitMs = (fireAtMs - System.currentTimeMillis()).coerceAtLeast(0)
         handler.postDelayed({
@@ -52,6 +65,13 @@ class DelayedPlaybackController(
     /** Drop already-played items so the playlist doesn't grow unbounded over a long session. */
     private fun trimPlayedItems() {
         val current = exoPlayer.currentMediaItemIndex
+        // Diagnostic for the still-remaining periodic stalls: if `current`
+        // is climbing well past where it normally sits, playback is
+        // falling behind additions rather than keeping pace - a symptom,
+        // not a cause, but useful to see alongside the per-segment log.
+        if (current > 8) {
+            Log.w(TAG, "currentMediaItemIndex=$current - playback may be falling behind")
+        }
         if (current > 4) {
             exoPlayer.removeMediaItems(0, current - 2)
         }
