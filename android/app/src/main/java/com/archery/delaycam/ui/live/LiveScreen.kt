@@ -55,7 +55,14 @@ fun LiveScreen(
     onOpenGallery: () -> Unit,
 ) {
     val settings by viewModel.settings.collectAsState()
-    val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val configuration = LocalConfiguration.current
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+    // The main delayed view below fills the whole screen with RESIZE_MODE_ZOOM,
+    // which crops the camera feed to the screen's own aspect ratio. The PiP
+    // preview used to hardcode 3f/4f regardless of screen shape, so it framed
+    // the same feed differently from the delayed view - matching this to the
+    // actual screen ratio makes the two views show the same crop.
+    val screenAspectRatio = configuration.screenWidthDp.toFloat() / configuration.screenHeightDp.toFloat()
     val warmupRemaining by viewModel.warmupRemainingSec.collectAsState()
     val gestureStatus by viewModel.gestureStatus.collectAsState()
     val appState by viewModel.appState.collectAsState()
@@ -147,7 +154,7 @@ fun LiveScreen(
                     end = 12.dp,
                 )
                 .width(110.dp)
-                .aspectRatio(3f / 4f)
+                .aspectRatio(screenAspectRatio)
                 .background(Color.Black, RoundedCornerShape(12.dp)),
         )
 
