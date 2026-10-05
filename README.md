@@ -27,3 +27,8 @@ GestureRecognizer + MediaCodec/MediaMuxer,照規格書實作常駐延遲緩衝�
 之後如果還要再驗證新的互動流程想法,建議先在這裡改著試,比每次都重新 build
 原生 App 快很多;但**不要拿這個當成最終驗收標準**,效能、真實鏡頭/手勢辨識的
 表現都得以 `android/` 為準。
+
+## [`bill-tracker/`](bill-tracker/) — 繳費小幫手(另一個獨立小工具)
+
+跟射箭 app 無關的手機網頁 app:掃描繳費單、記錄每月繳費金額/截止日/是否已繳、上傳
+繳費證明、固定繳費的拿單與截止提醒。說明見 [`bill-tracker/README.md`](bill-tracker/README.md)。
