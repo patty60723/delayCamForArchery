@@ -2,7 +2,8 @@ package com.archery.delaycam.ui
 
 import android.net.Uri
 import android.graphics.Bitmap
-import java.io.File
+import android.content.ContentValues
+import android.provider.MediaStore
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.foundation.layout.fillMaxSize
@@ -29,10 +30,20 @@ class RecordingPlaybackUiTest {
     @get:Rule val compose = createComposeRule()
 
     private fun screenshot(name: String) {
-        val directory = InstrumentationRegistry.getInstrumentation().targetContext.getExternalFilesDir("ui-review")!!
-        directory.mkdirs()
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val resolver = context.contentResolver
+        val values = ContentValues().apply {
+            put(MediaStore.Images.Media.DISPLAY_NAME, name + ".png")
+            put(MediaStore.Images.Media.MIME_TYPE, "image/png")
+            put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/ArcheryUiReview")
+            put(MediaStore.Images.Media.IS_PENDING, 1)
+        }
+        val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)!!
         val bitmap = compose.onRoot().captureToImage().asAndroidBitmap()
-        File(directory, name + ".png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        resolver.openOutputStream(uri)!!.use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        values.clear()
+        values.put(MediaStore.Images.Media.IS_PENDING, 0)
+        resolver.update(uri, values, null, null)
     }
 
     @Test fun recordingCommandsAreClearAndBusyStateBlocksRepeat() {

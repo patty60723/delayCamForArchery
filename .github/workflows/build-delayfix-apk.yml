@@ -5,6 +5,8 @@ on:
     branches:
       - codex/apk-delay-playback-fix
       - codex/recording-playback-ux
+    paths-ignore:
+      - "docs/**"
   workflow_dispatch:
 
 permissions:
@@ -105,7 +107,7 @@ jobs:
             chmod +x gradlew
             ./gradlew :app:connectedDebugAndroidTest --no-daemon --stacktrace
             mkdir -p app/build/ui-screenshots
-            adb pull /sdcard/Android/data/com.archery.delaycam.delayfix3/files/ui-review app/build/ui-screenshots
+            adb pull /sdcard/Pictures/ArcheryUiReview app/build/ui-screenshots
       - uses: actions/upload-artifact@v4
         if: always()
         with:
