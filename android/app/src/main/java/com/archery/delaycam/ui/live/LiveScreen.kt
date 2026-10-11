@@ -52,7 +52,8 @@ fun LiveScreen(
             if (warmup != null) {
                 Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
                     CircularProgressIndicator()
-                    Text("準備延遲畫面…" + warmup + " 秒", Modifier.padding(top = 12.dp))
+                    Text(if (warmup == 0) "等待延遲影片就緒…" else "準備延遲畫面…" + warmup + " 秒",
+                        Modifier.padding(top = 12.dp))
                 }
             }
             if (showPreview) {

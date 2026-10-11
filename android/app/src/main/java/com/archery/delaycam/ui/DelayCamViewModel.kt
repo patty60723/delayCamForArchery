@@ -75,6 +75,7 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
 
     private val _warmupRemainingSec = MutableStateFlow<Int?>(null)
     val warmupRemainingSec: StateFlow<Int?> = _warmupRemainingSec.asStateFlow()
+    private var liveHasRenderedFrame = false
 
     private val _gestureStatus = MutableStateFlow("手勢辨識初始化中…")
     val gestureStatus: StateFlow<String> = _gestureStatus.asStateFlow()
@@ -189,6 +190,12 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
         // segments from one encoder per foreground session. Preserve error
         // recovery for source or decoder failures alongside ENDED handling.
         livePlayer.addListener(object : Player.Listener {
+            override fun onRenderedFirstFrame() {
+                if (captureSession.isForeground() && livePlayer.mediaItemCount > 0) {
+                    liveHasRenderedFrame = true
+                    _warmupRemainingSec.value = null
+                }
+            }
             override fun onPlaybackStateChanged(playbackState: Int) {
                 Log.d(TAG, "livePlayer state=$playbackState item=${livePlayer.currentMediaItem?.mediaId} " +
                     "position=${livePlayer.currentPosition}ms queued=${livePlayer.mediaItemCount}")
@@ -308,8 +315,10 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
      * instead of leaving a bare black screen until the next segment lands.
      */
     private fun resetDelayedPlayback() {
+        liveHasRenderedFrame = false
         delayedPlayback.reset()
         segmentBuffer.clear()
+        _warmupRemainingSec.value = settings.value.delaySec
     }
 
     fun updateSettings(update: (AppSettings) -> AppSettings) {
@@ -392,7 +401,8 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
                     delaySec
                 } else {
                     val warmedSec = (System.currentTimeMillis() - oldest) / 1000
-                    (delaySec - warmedSec).toInt().coerceAtLeast(0).takeIf { it > 0 }
+                    if (liveHasRenderedFrame) null
+                    else (delaySec - warmedSec).toInt().coerceAtLeast(0)
                 }
             }
             delay(300)
@@ -580,6 +590,7 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
      */
     fun triggerSave(playAfterSave: Boolean = true) {
         if (!captureSession.isForeground() || _appState.value != AppState.LIVE ||
+            _warmupRemainingSec.value != null ||
             _clipSave.value.phase == SavePhase.SAVING) return
         if (failedClipSnapshot != null) {
             _toast.value = "請先重試保存上一段影片"
@@ -677,8 +688,7 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
         }
         // The backlog scheduled during the replay covers a window the archer
         // already watched - drop it and re-warm-up rather than dumping it in.
-        delayedPlayback.reset()
-        segmentBuffer.clear()
+        resetDelayedPlayback()
         gestureEngine.locked = false
         _appState.value = AppState.LIVE
     }
