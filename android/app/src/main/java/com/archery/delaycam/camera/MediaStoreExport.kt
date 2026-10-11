@@ -28,14 +28,20 @@ object MediaStoreExport {
         val uri = resolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values)
             ?: throw IOException("MediaStore insert() returned null - is storage full?")
 
+        try {
         resolver.openOutputStream(uri)?.use { out ->
             source.inputStream().use { input -> input.copyTo(out) }
         } ?: throw IOException("could not open output stream for $uri")
 
         values.clear()
         values.put(MediaStore.Video.Media.IS_PENDING, 0)
-        resolver.update(uri, values, null, null)
+        if (resolver.update(uri, values, null, null) != 1) throw IOException("無法完成影片保存")
         return uri
+        } catch (e: Exception) {
+            // Failed copies remain retryable at the caller; remove incomplete gallery entries.
+            try { resolver.delete(uri, null, null) } catch (_: Exception) { }
+            throw e
+        }
     }
 
     fun selectVideoTrack(extractor: MediaExtractor): Int? {
@@ -46,3 +52,4 @@ object MediaStoreExport {
         return null
     }
 }
+

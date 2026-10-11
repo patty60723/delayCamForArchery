@@ -101,6 +101,8 @@ private const val SEGMENT_TARGET_MS = 2000L
 class ContinuousSegmentEncoder(
     private val cacheDir: File,
     private val onSegmentFinalized: (SegmentInfo) -> Unit,
+    private val onStopped: () -> Unit = {},
+    private val filePrefix: String = "rollbuf",
 ) {
     @Volatile private var ringSize: Int = 10
     @Volatile private var running = false
@@ -180,11 +182,21 @@ class ContinuousSegmentEncoder(
 
     @Synchronized
     fun stop() {
-        val activeCodec = codec ?: return
-        running = false
+        val activeCodec = codec ?: run {
+            mainHandler.post { onStopped() }
+            return
+        }
+        try {
+            // Flush queued Surface frames before publishing the final segment.
+            activeCodec.signalEndOfInputStream()
+        } catch (e: Exception) {
+            Log.w(TAG, "could not signal encoder end-of-stream", e)
+            running = false
+        }
         drainThread?.join(2000)
         if (drainThread?.isAlive == true) {
             Log.w(TAG, "drain thread still finishing during encoder shutdown")
+            running = false
         }
         drainThread = null
         try {
@@ -237,6 +249,7 @@ class ContinuousSegmentEncoder(
                 val buffer = c.getOutputBuffer(index)
                 val isKeyFrame = bufferInfo.flags and MediaCodec.BUFFER_FLAG_KEY_FRAME != 0
                 val isCodecConfig = bufferInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0
+                if (bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) running = false
                 if (buffer != null && bufferInfo.size > 0 && !isCodecConfig) {
                     val now = System.currentTimeMillis()
                     if (muxer == null) {
@@ -271,7 +284,14 @@ class ContinuousSegmentEncoder(
                 }
             }
         }
-        finalizeCurrentSegment(System.currentTimeMillis())
+        try {
+            finalizeCurrentSegment(System.currentTimeMillis())
+        } catch (e: Exception) {
+            Log.w(TAG, "final segment cleanup failed", e)
+        } finally {
+            // Final segment callbacks and this completion share the main FIFO queue.
+            mainHandler.post { onStopped() }
+        }
     }
 
     private fun startNewSegment(c: MediaCodec, startedAtMs: Long) {
@@ -360,5 +380,6 @@ class ContinuousSegmentEncoder(
     }
 
     /** rollbuf_<index>.mp4 - overwritten in place each time its slot comes back around. */
-    private fun segmentFile(index: Int): File = File(cacheDir, "rollbuf_segment_$index.mp4")
+    private fun segmentFile(index: Int): File = File(cacheDir, "${filePrefix}_segment_$index.mp4")
 }
+

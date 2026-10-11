@@ -1,0 +1,12 @@
+{
+  "profile": "product-admin",
+  "platform": "android-compose",
+  "sourceRoots": ["android/app/src/main/java"],
+  "locale": "zh-TW",
+  "canonicalMap": "UX-CONTRACT.md",
+  "requiredCapabilities": ["Toast", "CRUD"],
+  "evidence": {
+    "crudFullFlow": "docs/recording-playback-ux-implementation.md",
+    "failurePaths": "android/app/src/androidTest/java/com/archery/delaycam/ui/RecordingPlaybackUiTest.kt"
+  }
+}

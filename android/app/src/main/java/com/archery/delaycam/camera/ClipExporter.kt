@@ -17,15 +17,9 @@ import java.nio.ByteBuffer
  * MediaStore under Movies/Archery so it shows up in the system gallery,
  * separate from the private-cache rolling segments (spec 6).
  *
- * NOT YET VERIFIED ON DEVICE. Concatenating MediaMuxer output from several
- * independently-started Recorder sessions is the riskiest part of this
- * skeleton: each segment's own encoder session may emit its own codec
- * config (SPS/PPS) and the first frame of a segment may not be a keyframe
- * if the stop()/start() boundary lands awkwardly. If exported clips glitch
- * at segment joins, that's the first place to look - a more robust (but
- * slower) fallback is decoding + re-encoding through MediaCodec instead of
- * raw sample copying. (ContinuousRecordingSession does the same kind of
- * concatenation incrementally, for the same reason and with the same caveat.)
+ * Inputs are protected snapshots from one foreground encoder session.
+ * SegmentTimeline normalizes input timestamps and joins the video samples.
+ * Real camera output and exported files still require device verification.
  */
 object ClipExporter {
 
@@ -51,13 +45,15 @@ object ClipExporter {
 
         var videoTrackIndex = -1
         var muxerStarted = false
-        var ptsOffsetUs = 0L
+        val timeline = SegmentTimeline()
 
+        try {
         for (input in inputs) {
             val extractor = MediaExtractor()
             try {
                 extractor.setDataSource(input.absolutePath)
-                val trackIndex = MediaStoreExport.selectVideoTrack(extractor) ?: continue
+                val trackIndex = MediaStoreExport.selectVideoTrack(extractor)
+                    ?: throw IOException("影片片段沒有可讀取的影像")
                 extractor.selectTrack(trackIndex)
 
                 if (!muxerStarted) {
@@ -66,21 +62,20 @@ object ClipExporter {
                     muxerStarted = true
                 }
 
-                var maxPtsUs = 0L
+                timeline.beginSegment()
                 while (true) {
                     buffer.clear()
                     val sampleSize = extractor.readSampleData(buffer, 0)
                     if (sampleSize < 0) break
                     bufferInfo.offset = 0
                     bufferInfo.size = sampleSize
-                    bufferInfo.presentationTimeUs = extractor.sampleTime + ptsOffsetUs
+                    bufferInfo.presentationTimeUs = timeline.map(extractor.sampleTime)
                     bufferInfo.flags = extractor.sampleFlags
-                    maxPtsUs = maxOf(maxPtsUs, bufferInfo.presentationTimeUs)
                     muxer.writeSampleData(videoTrackIndex, buffer, bufferInfo)
                     extractor.advance()
                 }
                 // next segment's samples continue after this one's last timestamp
-                ptsOffsetUs = maxPtsUs + 1
+                timeline.endSegment()
             } finally {
                 extractor.release()
             }
@@ -88,6 +83,9 @@ object ClipExporter {
 
         if (!muxerStarted) throw IOException("none of the segments had a readable video track")
         muxer.stop()
-        muxer.release()
+        } finally {
+            muxer.release()
+        }
     }
 }
+
