@@ -1,6 +1,7 @@
 package com.archery.delaycam.ui
 
 import android.app.Application
+import android.os.SystemClock
 import android.util.Log
 import androidx.camera.core.Preview
 import androidx.core.net.toUri
@@ -160,6 +161,11 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
         // within about a second, so the symptom becomes a brief blip
         // instead of a dead screen.
         livePlayer.addListener(object : Player.Listener {
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                Log.d(TAG, "livePlayer state=$playbackState item=${livePlayer.currentMediaItem?.mediaId} " +
+                    "position=${livePlayer.currentPosition}ms queued=${livePlayer.mediaItemCount}")
+            }
+
             override fun onPlayerError(error: PlaybackException) {
                 Log.e(TAG, "livePlayer error, resetting delayed playback", error)
                 resetDelayedPlayback()
@@ -217,36 +223,45 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
     }
 
     /**
-     * Companion to the livePlayer error listener above, for a different
-     * failure mode: confirmed on-device that a segment-boundary format
-     * inconsistency doesn't always throw a PlaybackException at all - the
-     * error listener never fired, yet the delayed view still went black,
-     * consistent with ExoPlayer getting stuck buffering/stalled on a bad
-     * transition rather than erroring out. Polls whether livePlayer's
-     * playback position is actually advancing while it should be (LIVE,
-     * has items queued, playWhenReady); if it's been stuck at the exact
-     * same position for STALL_THRESHOLD_MS, force the same reset the error
-     * listener does.
+     * Recover if playback stops progressing in READY or BUFFERING without
+     * raising a player error. Track the media item as well as its relative
+     * position, since a segment transition can reset the position to zero.
+     * ENDED is handled by DelayedPlaybackController when the next segment
+     * arrives, without clearing the queue or restarting warmup.
      */
     private suspend fun livePlayerStallWatchdog() {
+        var lastMediaItemId: String? = null
         var lastPositionMs = -1L
-        var lastChangedAtMs = System.currentTimeMillis()
+        var lastChangedAtMs = SystemClock.elapsedRealtime()
         while (viewModelScope.isActive) {
             delay(1000)
-            val watching = _appState.value == AppState.LIVE && livePlayer.mediaItemCount > 0 && livePlayer.playWhenReady
+            val playbackState = livePlayer.playbackState
+            // ENDED means the playlist ran out while the next segment is being
+            // produced. enqueue() resumes from that new item when it arrives.
+            // Resetting here would discard the scheduled items and force warmup.
+            val watching = _appState.value == AppState.LIVE &&
+                livePlayer.mediaItemCount > 0 && livePlayer.playWhenReady &&
+                (playbackState == Player.STATE_READY || playbackState == Player.STATE_BUFFERING)
             if (!watching) {
+                lastMediaItemId = null
                 lastPositionMs = -1L
-                lastChangedAtMs = System.currentTimeMillis()
+                lastChangedAtMs = SystemClock.elapsedRealtime()
                 continue
             }
+            val mediaItemId = livePlayer.currentMediaItem?.mediaId
             val position = livePlayer.currentPosition
-            val now = System.currentTimeMillis()
-            if (position != lastPositionMs) {
+            val now = SystemClock.elapsedRealtime()
+            // currentPosition is relative to each item. A new segment can have
+            // the same sampled position as its predecessor and still be playing.
+            if (mediaItemId != lastMediaItemId || position != lastPositionMs) {
+                lastMediaItemId = mediaItemId
                 lastPositionMs = position
                 lastChangedAtMs = now
             } else if (now - lastChangedAtMs > STALL_THRESHOLD_MS) {
-                Log.w(TAG, "livePlayer stalled at ${position}ms for ${STALL_THRESHOLD_MS}ms+, resetting")
+                Log.w(TAG, "livePlayer stalled: state=$playbackState item=$mediaItemId position=${position}ms " +
+                    "buffered=${livePlayer.bufferedPosition}ms queued=${livePlayer.mediaItemCount}, resetting")
                 resetDelayedPlayback()
+                lastMediaItemId = null
                 lastPositionMs = -1L
                 lastChangedAtMs = now
             }

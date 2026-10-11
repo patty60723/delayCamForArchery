@@ -21,6 +21,10 @@ android {
     }
 
     buildTypes {
+        debug {
+            applicationIdSuffix = ".delayfix"
+            versionNameSuffix = "-delayfix"
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
