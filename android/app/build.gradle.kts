@@ -21,6 +21,12 @@ android {
         versionName = "0.2.0"
     }
 
+    // CI pins a cached debug key so later test builds can update this package.
+    // Local builds keep Android Gradle's normal debug signing defaults.
+    signingConfigs.getByName("debug") {
+        System.getenv("DELAYCAM_DEBUG_KEYSTORE")?.let { storeFile = file(it) }
+    }
+
     buildTypes {
         debug {
             applicationIdSuffix = ".delayfix3"
