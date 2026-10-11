@@ -254,7 +254,10 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
             recordingStoppedInBackground = true
             requestRecordingStop()
         }
-        if (recordingLifecycle.phase == RecordingPhase.STOPPING) closingCaptureSessionId = endingSessionId
+        if (recordingLifecycle.phase == RecordingPhase.STOPPING &&
+            recordingLifecycle.acceptsSegments() && closingCaptureSessionId == null) {
+            closingCaptureSessionId = endingSessionId
+        }
         Log.d(TAG, "app background: suspending capture and discarding old delay queue")
         resumeReplayOnForeground = replayPlayer.playWhenReady
         replayPlayer.pause()

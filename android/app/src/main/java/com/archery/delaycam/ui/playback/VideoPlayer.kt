@@ -33,6 +33,7 @@ fun VideoPlayer(player: Player, mirrored: Boolean, modifier: Modifier = Modifier
 @Composable
 fun MediaReviewLayout(video: @Composable (Modifier) -> Unit, controls: @Composable () -> Unit) {
     BoxWithConstraints(Modifier.fillMaxSize()) {
+        val controlsMaxHeight = maxHeight * 0.55f
         if (maxWidth >= 600.dp && maxWidth > maxHeight) {
             Row(Modifier.fillMaxSize()) {
                 video(Modifier.weight(1.4f).fillMaxHeight())
@@ -42,7 +43,7 @@ fun MediaReviewLayout(video: @Composable (Modifier) -> Unit, controls: @Composab
         } else {
             Column(Modifier.fillMaxSize()) {
                 video(Modifier.weight(1f).fillMaxWidth())
-                Column(Modifier.fillMaxWidth().heightIn(max = maxHeight * 0.55f)
+                Column(Modifier.fillMaxWidth().heightIn(max = controlsMaxHeight)
                     .verticalScroll(rememberScrollState()).padding(horizontal = 12.dp)) { controls() }
             }
         }

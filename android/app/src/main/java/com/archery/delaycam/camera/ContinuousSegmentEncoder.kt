@@ -186,10 +186,17 @@ class ContinuousSegmentEncoder(
             mainHandler.post { onStopped() }
             return
         }
-        running = false
+        try {
+            // Flush queued Surface frames before publishing the final segment.
+            activeCodec.signalEndOfInputStream()
+        } catch (e: Exception) {
+            Log.w(TAG, "could not signal encoder end-of-stream", e)
+            running = false
+        }
         drainThread?.join(2000)
         if (drainThread?.isAlive == true) {
             Log.w(TAG, "drain thread still finishing during encoder shutdown")
+            running = false
         }
         drainThread = null
         try {
@@ -242,6 +249,7 @@ class ContinuousSegmentEncoder(
                 val buffer = c.getOutputBuffer(index)
                 val isKeyFrame = bufferInfo.flags and MediaCodec.BUFFER_FLAG_KEY_FRAME != 0
                 val isCodecConfig = bufferInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0
+                if (bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) running = false
                 if (buffer != null && bufferInfo.size > 0 && !isCodecConfig) {
                     val now = System.currentTimeMillis()
                     if (muxer == null) {

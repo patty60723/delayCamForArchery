@@ -33,6 +33,8 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: Install Android SDK packages
         run: sdkmanager "platforms;android-34" "build-tools;34.0.0"
+      - name: Lint design context
+        run: npx -y -p @google/design.md designmd lint ../DESIGN.md
       - name: Run unit tests and build APKs
         run: |
           chmod +x gradlew
@@ -99,7 +101,11 @@ jobs:
           arch: x86_64
           profile: pixel_6
           disable-animations: true
-          script: chmod +x gradlew && ./gradlew :app:connectedDebugAndroidTest --no-daemon --stacktrace
+          script: |
+            chmod +x gradlew
+            ./gradlew :app:connectedDebugAndroidTest --no-daemon --stacktrace
+            mkdir -p app/build/ui-screenshots
+            adb pull /sdcard/Android/data/com.archery.delaycam.delayfix3/files/ui-review app/build/ui-screenshots
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -107,4 +113,5 @@ jobs:
           path: |
             android/app/build/reports/androidTests/
             android/app/build/outputs/androidTest-results/
+            android/app/build/ui-screenshots/
           retention-days: 14
