@@ -30,7 +30,6 @@ import com.archery.delaycam.navigation.DelayCamNavHost
 import com.archery.delaycam.ui.DelayCamViewModel
 import com.archery.delaycam.ui.theme.DelayCamTheme
 import kotlinx.coroutines.suspendCancellableCoroutine
-import java.util.concurrent.Executors
 import kotlin.coroutines.resume
 
 class MainActivity : ComponentActivity() {
@@ -38,6 +37,25 @@ class MainActivity : ComponentActivity() {
     private val viewModel: DelayCamViewModel by viewModels()
     private var cameraBound = false
     private var lastLoggedRotationDegrees = -1
+    private var imageAnalysis: ImageAnalysis? = null
+
+    override fun onStart() {
+        super.onStart()
+        viewModel.onAppForegrounded()
+    }
+
+    override fun onStop() {
+        viewModel.onAppBackgrounded()
+        super.onStop()
+    }
+
+    override fun onDestroy() {
+        // The executor belongs to the retained ViewModel. Remove this
+        // Activity's analyzer before a replacement Activity binds its own.
+        imageAnalysis?.clearAnalyzer()
+        imageAnalysis = null
+        super.onDestroy()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -74,10 +92,10 @@ class MainActivity : ComponentActivity() {
         try {
             val cameraProvider = awaitCameraProvider()
 
-            val analysisExecutor = Executors.newSingleThreadExecutor()
             val imageAnalysis = ImageAnalysis.Builder()
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                 .build()
+            this.imageAnalysis = imageAnalysis
             // See ContinuousSegmentEncoder's doc comment for the two earlier
             // approaches that failed on-device (a second Preview use case
             // rejected at bind time; a hand-rolled YUV-buffer copy that
@@ -86,8 +104,9 @@ class MainActivity : ComponentActivity() {
             // internally - and shares it with both consumers, closing the
             // ImageProxy itself once both are done with it (neither one
             // owns it anymore).
-            imageAnalysis.setAnalyzer(analysisExecutor) { proxy ->
+            imageAnalysis.setAnalyzer(viewModel.cameraAnalysisExecutor) { proxy ->
                 try {
+                    val sessionId = viewModel.cameraSessionForFrame() ?: return@setAnalyzer
                     // Reported "delayed view upside-down + both gestures dead"
                     // (they likely share one cause: gesture recognition reads
                     // the exact same bitmap the encoder draws, so a
@@ -107,8 +126,7 @@ class MainActivity : ComponentActivity() {
                     }
                     val bitmap = proxy.toRotatedBitmap()
                     val timestampMs = proxy.imageInfo.timestamp / 1_000_000L
-                    viewModel.segmentEncoder.onFrame(bitmap)
-                    viewModel.gestureEngine.analyzeBitmap(bitmap, timestampMs)
+                    viewModel.onCameraFrame(bitmap, timestampMs, sessionId)
                 } catch (e: Exception) {
                     Log.w("MainActivity", "frame conversion failed, skipping this frame", e)
                 } finally {

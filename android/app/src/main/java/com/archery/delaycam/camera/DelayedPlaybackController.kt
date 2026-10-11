@@ -54,9 +54,20 @@ class DelayedPlaybackController(
     }
 
     private fun enqueue(segment: SegmentInfo) {
-        exoPlayer.addMediaItem(MediaItem.fromUri(segment.file.toUri()))
+        val firstNewItemIndex = exoPlayer.mediaItemCount
+        val wasEnded = exoPlayer.playbackState == Player.STATE_ENDED
+        exoPlayer.addMediaItem(
+            MediaItem.Builder()
+                .setUri(segment.file.toUri())
+                .setMediaId("${segment.file.absolutePath}:${segment.startedAtMs}:${segment.endedAtMs}")
+                .build()
+        )
         if (exoPlayer.playbackState == Player.STATE_IDLE) {
             exoPlayer.prepare()
+        } else if (wasEnded) {
+            // Appending after the last item finished does not resume Media3 1.4.1.
+            // Seek to the newly added item, preserving the queue and delay.
+            exoPlayer.seekToDefaultPosition(firstNewItemIndex)
         }
         exoPlayer.playWhenReady = true
         trimPlayedItems()

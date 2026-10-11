@@ -180,18 +180,31 @@ class ContinuousSegmentEncoder(
 
     @Synchronized
     fun stop() {
-        if (codec == null) return
+        val activeCodec = codec ?: return
         running = false
         drainThread?.join(2000)
+        if (drainThread?.isAlive == true) {
+            Log.w(TAG, "drain thread still finishing during encoder shutdown")
+        }
         drainThread = null
         try {
-            codec?.stop()
+            activeCodec.stop()
         } catch (e: Exception) {
             Log.w(TAG, "codec.stop() failed", e)
         }
-        codec?.release()
-        codec = null
-        inputSurface = null
+        try {
+            activeCodec.release()
+        } catch (e: Exception) {
+            Log.w(TAG, "codec.release() failed", e)
+        } finally {
+            try {
+                inputSurface?.release()
+            } catch (e: Exception) {
+                Log.w(TAG, "encoder input Surface.release() failed", e)
+            }
+            codec = null
+            inputSurface = null
+        }
     }
 
     private fun drainLoop() {
@@ -248,7 +261,14 @@ class ContinuousSegmentEncoder(
                 muxer = null
                 currentSegmentFile = null
             } finally {
-                c.releaseOutputBuffer(index, false)
+                try {
+                    c.releaseOutputBuffer(index, false)
+                } catch (e: Exception) {
+                    // Shutdown may release the codec after the drain join
+                    // timeout. Do not let that race crash the process.
+                    Log.w(TAG, "releaseOutputBuffer failed, stopping drain loop", e)
+                    running = false
+                }
             }
         }
         finalizeCurrentSegment(System.currentTimeMillis())
