@@ -30,4 +30,12 @@ GitHub 分支快取仍不是正式簽章備份；正式持續發佈應使用受�
 
 DESIGN.md 與 UX-CONTRACT.md 已同步記錄配置和倒數契約。frontend-design-premium 靜態稽核無錯誤；該工具不能代替 Compose 編譯與原生操作測試。
 
-最終建置、測試、簽章及 APK 連結會在驗證完成後補入。
+最終受測來源為 f41b62d4f9dd3e1654c919469951eecaa511ec8a，[Actions 38164426421](https://github.com/patty60723/delayCamForArchery/actions/runs/38164426421) 的 build 與 ui-tests 均成功。testDebugUnitTest 15 項、connectedDebugAndroidTest 12 項，失敗／錯誤／略過均為 0；assembleDebug 與 assembleDebugAndroidTest 成功。模擬器為 Android API 34、x86_64、Pixel 6 設定。暖機數字的亮色像素檢查通過，已檢查橫向與暖機倒數截圖。
+
+APK v2 簽章驗證通過，憑證 SHA-256 與上次交付的修正版 3 一致；套件相同、versionCode 由 3 提高為 4，因此可直接更新該版本。
+
+- [0.2.1 更新 APK ZIP](https://github.com/patty60723/delayCamForArchery/actions/runs/38164426421/artifacts/11711477784)：解壓後直接安裝 app-debug.apk，保留現有修正版 3 的資料，不需先移除。Actions 保留至 2026-10-25。
+- APK SHA-256：a35df80f396196773aa4a3a2a3a141dbcd27c453be8835156f8c37da427bd20a。
+- [原生操作測試與截圖](https://github.com/patty60723/delayCamForArchery/actions/runs/38164426421/artifacts/11712170171)。影片佔位截圖只能證明配置，不能宣稱已做完整實機拍攝。
+
+DESIGN.md lint 無錯誤，有 6 個色票文件引用提示；靜態 premium 稽核無錯誤。實際 Pixel 的 CameraX／延遲影片比例、長時間拍攝、完整 TalkBack 與大字流程仍需實機驗收。
