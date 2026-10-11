@@ -4,6 +4,8 @@
 - 專案：[patty60723/delayCamForArchery](https://github.com/patty60723/delayCamForArchery)
 - 修正版分支：`codex/apk-delay-playback-fix`
 
+後續更新：[返回前景後延遲畫面凍結的修正版 2](foreground-resume-fix.md)。本文件保留第一版 APK 的來源與驗證紀錄；後續生命週期處理及片段 ID 改進請見該文件。
+
 ## 1. 結果與適用範圍
 
 這次修正處理延遲畫面播放清單耗盡後未接續新片段，以及 watchdog 對該等待狀態執行重置的問題。修正版 APK 已成功編譯並通過簽章驗證；使用者安裝後回報：「看起來不會發生了！」，表示目前初步使用未再觀察到原本的症狀。

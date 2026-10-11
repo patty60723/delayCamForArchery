@@ -16,14 +16,14 @@ android {
         // so this costs nothing on any reasonably current test device.
         minSdk = 29
         targetSdk = 34
-        versionCode = 1
+        versionCode = 2
         versionName = "0.1.0-skeleton"
     }
 
     buildTypes {
         debug {
-            applicationIdSuffix = ".delayfix"
-            versionNameSuffix = "-delayfix"
+            applicationIdSuffix = ".delayfix2"
+            versionNameSuffix = "-delayfix2"
         }
         release {
             isMinifyEnabled = false

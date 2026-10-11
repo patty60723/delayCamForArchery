@@ -1,6 +1,7 @@
 package com.archery.delaycam.ui
 
 import android.app.Application
+import android.graphics.Bitmap
 import android.os.SystemClock
 import android.util.Log
 import androidx.camera.core.Preview
@@ -11,6 +12,7 @@ import com.archery.delaycam.camera.ClipExporter
 import com.archery.delaycam.camera.ContinuousRecordingSession
 import com.archery.delaycam.camera.ContinuousSegmentEncoder
 import com.archery.delaycam.camera.DelayedPlaybackController
+import com.archery.delaycam.camera.ForegroundCaptureSession
 import com.archery.delaycam.camera.SegmentBuffer
 import com.archery.delaycam.camera.SegmentInfo
 import com.archery.delaycam.gallery.ClipEntry
@@ -34,6 +36,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.util.concurrent.Executors
 
 // Extra history kept on top of delaySec+backtrackSec, as slack for the time
 // it actually takes an archer to notice+react+gesture after watching their
@@ -82,18 +85,12 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
 
     private val segmentBuffer = SegmentBuffer(maxAgeMs = 10_000L)
 
-    /**
-     * MainActivity calls onFrame() on this directly from its ImageAnalysis
-     * analyzer (the same one gesture detection uses) with each frame
-     * already converted to a Bitmap - see ContinuousSegmentEncoder's doc
-     * comment for why segment production moved off CameraX's Recorder,
-     * and why it's fed this way rather than its own dedicated camera
-     * stream.
-     */
-    val segmentEncoder = ContinuousSegmentEncoder(
-        cacheDir = application.cacheDir,
-        onSegmentFinalized = ::onSegmentFinalized,
-    )
+    // Camera frames, encoder stop, and encoder replacement share one FIFO
+    // executor, so a Surface is never released while an analyzer draws to it.
+    val cameraAnalysisExecutor = Executors.newSingleThreadExecutor()
+    private val captureSession = ForegroundCaptureSession()
+    @Volatile private var segmentEncoder: ContinuousSegmentEncoder? = null
+    private var resumeReplayOnForeground = false
     private val delayedPlayback = DelayedPlaybackController(
         exoPlayer = livePlayer,
         getDelaySecMs = { settings.value.delaySec * 1000L },
@@ -147,19 +144,9 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
             }
         })
 
-        // livePlayer's playlist is a running sequence of independently-
-        // recorded 1s segment files (see DelayedPlaybackController) -
-        // consecutive segments come from separate CameraX Recorder
-        // sessions and can carry slightly different codec init data at
-        // their boundary, which is a known risk (see that class's doc
-        // comment). With no listener at all, a decode error there used to
-        // just silently stop the player - the delayed view would play the
-        // first segment and then go permanently black with nothing logged.
-        // This at least surfaces the error and self-heals: reset the
-        // player, and the next already-scheduled segments (the buffer
-        // keeps recording/scheduling regardless) repopulate the playlist
-        // within about a second, so the symptom becomes a brief blip
-        // instead of a dead screen.
+        // ContinuousSegmentEncoder supplies independently playable MP4
+        // segments from one encoder per foreground session. Preserve error
+        // recovery for source or decoder failures alongside ENDED handling.
         livePlayer.addListener(object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
                 Log.d(TAG, "livePlayer state=$playbackState item=${livePlayer.currentMediaItem?.mediaId} " +
@@ -171,6 +158,70 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
                 resetDelayedPlayback()
             }
         })
+    }
+
+    /** Called on the main thread from Activity.onStart(), including first launch. */
+    fun onAppForegrounded() {
+        val sessionId = captureSession.beginForeground() ?: return
+        resetDelayedPlayback()
+        _warmupRemainingSec.value = settings.value.delaySec
+        Log.d(TAG, "app foreground: capture session=$sessionId, warming fresh delay buffer")
+        cameraAnalysisExecutor.execute {
+            if (!captureSession.isCurrent(sessionId)) return@execute
+            val encoder = ContinuousSegmentEncoder(
+                cacheDir = getApplication<Application>().cacheDir,
+                onSegmentFinalized = { segment ->
+                    // Finalization posts to main. A stopped encoder can still
+                    // have callbacks queued when the next Activity starts.
+                    if (captureSession.isCurrent(sessionId)) onSegmentFinalized(segment)
+                },
+            )
+            val currentSettings = settings.value
+            encoder.setRingSize(
+                currentSettings.delaySec + currentSettings.backtrackSec + REACTION_MARGIN_SEC + 1
+            )
+            segmentEncoder = encoder
+            if (!captureSession.markReady(sessionId)) stopSegmentEncoder()
+        }
+        if (_appState.value == AppState.REPLAY && resumeReplayOnForeground) {
+            replayPlayer.playWhenReady = true
+        }
+        resumeReplayOnForeground = false
+    }
+
+    /** Called before CameraX stops receiving frames in Activity.onStop(). */
+    fun onAppBackgrounded() {
+        if (!captureSession.endForeground()) return
+        Log.d(TAG, "app background: suspending capture and discarding old delay queue")
+        resumeReplayOnForeground = replayPlayer.playWhenReady
+        replayPlayer.pause()
+        resetDelayedPlayback()
+        _warmupRemainingSec.value = settings.value.delaySec
+        // Runs after any in-flight analyzer, and before the next session's
+        // startup task. Encoder teardown never blocks the Activity thread.
+        cameraAnalysisExecutor.execute { stopSegmentEncoder() }
+    }
+
+    fun cameraSessionForFrame(): Long? = captureSession.sessionForFrame()
+
+    /** Only called on cameraAnalysisExecutor, with the session captured before conversion. */
+    fun onCameraFrame(bitmap: Bitmap, timestampMs: Long, sessionId: Long) {
+        if (!captureSession.isCurrent(sessionId)) return
+        segmentEncoder?.onFrame(bitmap)
+        if (captureSession.isCurrent(sessionId)) {
+            gestureEngine.analyzeBitmap(bitmap, timestampMs)
+        }
+    }
+
+    /** Only called on cameraAnalysisExecutor. */
+    private fun stopSegmentEncoder() {
+        val encoder = segmentEncoder
+        segmentEncoder = null
+        try {
+            encoder?.stop()
+        } catch (e: Exception) {
+            Log.w(TAG, "foreground encoder cleanup failed", e)
+        }
     }
 
     /**
@@ -209,7 +260,7 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
         // the live camera - see triggerSave()'s doc comment.
         val windowSec = settings.delaySec + settings.backtrackSec + REACTION_MARGIN_SEC
         segmentBuffer.setMaxAgeMs(windowSec * 1000L)
-        segmentEncoder.setRingSize(windowSec + 1)
+        segmentEncoder?.setRingSize(windowSec + 1)
     }
 
     private fun onSegmentFinalized(segment: SegmentInfo) {
@@ -239,7 +290,7 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
             // ENDED means the playlist ran out while the next segment is being
             // produced. enqueue() resumes from that new item when it arrives.
             // Resetting here would discard the scheduled items and force warmup.
-            val watching = _appState.value == AppState.LIVE &&
+            val watching = captureSession.isForeground() && _appState.value == AppState.LIVE &&
                 livePlayer.mediaItemCount > 0 && livePlayer.playWhenReady &&
                 (playbackState == Player.STATE_READY || playbackState == Player.STATE_BUFFERING)
             if (!watching) {
@@ -302,6 +353,7 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
      * should keep working through per-shot saves and replays.
      */
     fun toggleContinuousRecording() {
+        if (!captureSession.isForeground()) return
         if (_isContinuousRecording.value) {
             viewModelScope.launch {
                 val displayName = sessionDisplayName()
@@ -346,6 +398,7 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
      * to the actual present moment (now), just starting further back.
      */
     fun triggerSave() {
+        if (!captureSession.isForeground()) return
         // Diagnostic for "Open_Palm gesture never seems to do anything":
         // GestureEngine posts here whenever it fires, so if this log line
         // never shows up at all, the gesture itself isn't being recognized
@@ -434,8 +487,12 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
     }
 
     override fun onCleared() {
-        segmentEncoder.stop()
-        gestureEngine.close()
+        captureSession.close()
+        cameraAnalysisExecutor.execute {
+            stopSegmentEncoder()
+            gestureEngine.close()
+        }
+        cameraAnalysisExecutor.shutdown()
         continuousRecordingSession.releaseImmediate()
         livePlayer.release()
         replayPlayer.release()
