@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import com.google.mediapipe.framework.image.BitmapImageBuilder
 import com.google.mediapipe.framework.image.MPImage
@@ -96,18 +97,23 @@ class GestureEngine(
     var locked: Boolean = false
         set(value) {
             field = value
-            if (value) saveState.streakStart = 0L
+            if (value) saveState.suspendUntilRelease()
+        }
+
+    @Volatile var interactionEnabled: Boolean = false
+        set(value) {
+            if (field != value) {
+                saveState.suspendUntilRelease()
+                recordToggleState.suspendUntilRelease()
+            }
+            field = value
         }
 
     private var recognizer: GestureRecognizer? = null
-    private val saveState = StreakState()
-    private val recordToggleState = StreakState()
+    private val saveState = GestureLatch(STABLE_MS, COOLDOWN_MS)
+    private val recordToggleState = GestureLatch(STABLE_MS, COOLDOWN_MS)
     private val mainHandler = Handler(Looper.getMainLooper())
 
-    private class StreakState {
-        var streakStart: Long = 0L
-        var lastFireAt: Long = 0L
-    }
 
     fun init() {
         recognizer = tryCreate(Delegate.GPU) ?: tryCreate(Delegate.CPU)
@@ -158,8 +164,9 @@ class GestureEngine(
     // onToggleRecord() callback must be posted to the main thread before it
     // touches anything UI-thread-confined like the ViewModel's ExoPlayers.
     private fun onResult(result: GestureRecognizerResult, input: MPImage) {
+        if (!interactionEnabled) return
         val top = result.gestures().firstOrNull()?.firstOrNull()
-        val now = System.currentTimeMillis()
+        val now = SystemClock.elapsedRealtime()
 
         // Diagnostic logging added while chasing an earlier "Open_Palm never
         // fires" report - confirmed on-device it was just this gesture's
@@ -172,24 +179,14 @@ class GestureEngine(
 
         if (!locked) {
             val isSaveGesture = top != null && top.categoryName() == SAVE_CATEGORY && top.score() >= SAVE_MIN_SCORE
-            evaluate(saveState, isSaveGesture, now, onGesture)
+            if (saveState.evaluate(isSaveGesture, now)) mainHandler.post {
+                if (interactionEnabled && !locked) onGesture()
+            }
         }
 
         val isRecordToggleGesture = top != null && top.categoryName() == RECORD_TOGGLE_CATEGORY && top.score() >= RECORD_TOGGLE_MIN_SCORE
-        evaluate(recordToggleState, isRecordToggleGesture, now, onToggleRecord)
-    }
-
-    private fun evaluate(state: StreakState, matched: Boolean, now: Long, onFire: () -> Unit) {
-        if (!matched) {
-            state.streakStart = 0L
-            return
-        }
-        if (state.streakStart == 0L) state.streakStart = now
-        val heldFor = now - state.streakStart
-        if (heldFor >= STABLE_MS && now - state.lastFireAt >= COOLDOWN_MS) {
-            state.lastFireAt = now
-            state.streakStart = 0L
-            mainHandler.post(onFire)
+        if (recordToggleState.evaluate(isRecordToggleGesture, now)) mainHandler.post {
+            if (interactionEnabled) onToggleRecord()
         }
     }
 
@@ -199,3 +196,4 @@ class GestureEngine(
         available = false
     }
 }
+

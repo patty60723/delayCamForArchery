@@ -1,9 +1,10 @@
-name: Build delay playback fix APK
+name: Build and verify recording UX APK
 
 on:
   push:
     branches:
       - codex/apk-delay-playback-fix
+      - codex/recording-playback-ux
   workflow_dispatch:
 
 permissions:
@@ -25,14 +26,18 @@ jobs:
       - uses: android-actions/setup-android@v3
         with:
           packages: platform-tools
+      - uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: delaycam-debug-keystore-v3
       - uses: gradle/actions/setup-gradle@v4
       - name: Install Android SDK packages
         run: sdkmanager "platforms;android-34" "build-tools;34.0.0"
-      - name: Run lifecycle unit tests and build signed debug APK
+      - name: Run unit tests and build APKs
         run: |
           chmod +x gradlew
-          ./gradlew :app:testDebugUnitTest :app:assembleDebug --no-daemon --stacktrace
-      - name: Report lifecycle unit test results
+          ./gradlew :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon --stacktrace
+      - name: Report unit test results
         run: |
           python3 - <<'PY'
           from pathlib import Path
@@ -55,7 +60,51 @@ jobs:
           sha256sum app/build/outputs/apk/debug/app-debug.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: delaycam-foreground-fix-apk
+          name: delaycam-recording-ux-v3-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+          retention-days: 14
+
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: recording-ux-unit-test-results
+          path: android/app/build/test-results/testDebugUnitTest/
+          retention-days: 14
+
+  ui-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Run recording and playback UI tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          working-directory: android
+          api-level: 34
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          script: chmod +x gradlew && ./gradlew :app:connectedDebugAndroidTest --no-daemon --stacktrace
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: recording-ux-ui-test-results
+          path: |
+            android/app/build/reports/androidTests/
+            android/app/build/outputs/androidTest-results/
           retention-days: 14

@@ -1,0 +1,42 @@
+# Recording and Playback UX Contract
+
+使用者已同意 PM／UI UX 文件提出的錄影與基本播放調整。視覺規則見 [DESIGN.md](DESIGN.md)，需求依據見 [PM 報告](docs/archery-product-review.md) 與 [UI UX 報告](docs/archery-uiux-review.md)。
+
+## Canonical UI Map
+
+| Capability | Canonical owner | Source of truth | Allowed variants | Verification |
+| --- | --- | --- | --- | --- |
+| Toast | DelayCamNavHost / RecordingControls / SaveStatusNotice | 本文件 Feedback | 一般短提示；保存狀態持續顯示 | RecordingPlaybackUiTest |
+| CRUD | DelayCamViewModel / PlayerScreen | 本文件 Playback | 手動開啟保存結果；刪除確認 | RecordingPlaybackUiTest / 裝置驗收 |
+
+表格、日期輸入、選單、表單與網頁 scrollbar 不適用於這次原生 Android 變更。
+
+## Recording
+
+IDLE → STARTING → RECORDING → STOPPING → IDLE。開始／停止由同一個入口處理，忙碌時禁用重複切換；手勢一次保持只觸發一次，放下後重新啟用。手勢只在練習和即時回放頁作用。
+
+錄影列置於導航之外，因此跨 LIVE、Replay、相簿、播放器與設定維持一致。計時使用單調時鐘，請求停止時凍結，不把桌面時間計入。
+
+停止先等待含尾段的片段或編碼器完成事件，再保存。若 5 秒內沒有完成事件，保存已取得的內容並顯示末段未確認，不宣稱完整。保存要求在 Activity 結束時仍盡力完成；程序被系統終止後的復原屬後續範圍。
+
+短期採前景錄影：切背景停止並保存；返回呈現真實保存狀態，由使用者點繼續錄影建立新段，延遲畫面重新準備。旋轉造成 Activity 重建時也遵循相同政策，不承諾無縫續錄。
+
+## Playback
+
+存檔並回看：保護片段副本 → 即時慢動作 → 保存獨立進行。只保存：留在延遲畫面。正常單次回放結束可返回；使用者暫停、拖曳、跳轉、切速度或鏡像後，停留回放直到明確返回。
+
+即時與相簿使用相同暫停、時間軸、前後 5 秒、0.25×／0.5×／1×與鏡像控制。鏡像選擇由同一 ViewModel 擁有，僅翻轉影片；速度沿用既有設定來源。完整 FIT 取景是本次預設。
+
+查看即時回放的保存結果會離開並清除該回放路由，返回不留下空的回放頁。刪除前必須確認，刪除成功才離開播放器。
+
+## Feedback
+
+SAVING／SAVED／FAILED 分別呈現；MediaStore 完成後才能顯示已保存。單箭與整段結果獨立，存單箭不停止整段錄影。保存失敗保留可重試的副本，不僅顯示短 toast；成功透過查看按鈕由使用者開啟。
+
+一般提示沿用導航的短提示；保存結果使用共用持續狀態，兩者為明確的用途差異。刪除與分享沿用本機影片規則，不增加帳號、雲端或儲存權限。
+
+## Accessibility and Verification
+
+Material 語意按鈕、繁中標籤、48 dp 操作下限、系統安全區、可捲動控制區和非拖曳時間軸替代操作。錄影時間不以 live-region 每秒播報，保存狀態使用 polite live-region。
+
+JVM 測試驗證生命週期、片段時間、跨片段定位和手勢；模擬器測試驗證按鈕、忙碌、保存成功／失敗與直接播放控制。實際 Pixel 長時間錄影、CameraX／編碼器、日照、護具、觀看距離與完整大字／TalkBack 流程仍需裝置驗收。

@@ -1,11 +1,14 @@
 package com.archery.delaycam.navigation
 
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -18,6 +21,8 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.compose.currentBackStackEntryAsState
+import com.archery.delaycam.ui.components.RecordingControls
 import androidx.navigation.navArgument
 import com.archery.delaycam.gallery.ClipEntry
 import com.archery.delaycam.state.AppState
@@ -42,6 +47,29 @@ fun DelayCamNavHost(viewModel: DelayCamViewModel) {
     val navController = rememberNavController()
     val appState by viewModel.appState.collectAsState()
     val toast by viewModel.toast.collectAsState()
+    val recordingPhase by viewModel.recordingPhase.collectAsState()
+    val recordingElapsed by viewModel.recordingElapsedSec.collectAsState()
+    val recordingSave by viewModel.recordingSave.collectAsState()
+    val backStackEntry by navController.currentBackStackEntryAsState()
+    val route = backStackEntry?.destination?.route
+    LaunchedEffect(route) {
+        viewModel.setPracticeVisible(route == Routes.LIVE || route == Routes.REPLAY)
+    }
+    DisposableEffect(viewModel) {
+        onDispose { viewModel.setPracticeVisible(false) }
+    }
+    val openSaved: (android.net.Uri, String) -> Unit = { uri, name ->
+        if (route == Routes.REPLAY) {
+            viewModel.skipReplay()
+            navController.navigate(Routes.player(uri.toString(), name)) {
+                popUpTo(Routes.REPLAY) { inclusive = true }
+            }
+        } else navController.navigate(Routes.player(uri.toString(), name))
+    }
+
+    LaunchedEffect(route, appState) {
+        if (route == Routes.REPLAY && appState == AppState.LIVE) navController.popBackStack()
+    }
 
     LaunchedEffect(appState) {
         val onReplayRoute = navController.currentBackStackEntry?.destination?.route == Routes.REPLAY
@@ -63,7 +91,11 @@ fun DelayCamNavHost(viewModel: DelayCamViewModel) {
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        AppNavHost(navController, viewModel)
+        Column(Modifier.fillMaxSize().safeDrawingPadding()) {
+            RecordingControls(recordingPhase, recordingElapsed, recordingSave,
+                viewModel::toggleContinuousRecording, viewModel::retryRecordingSave, openSaved)
+            AppNavHost(navController, viewModel, Modifier.weight(1f), openSaved)
+        }
 
         toast?.let {
             Surface(
@@ -80,17 +112,23 @@ fun DelayCamNavHost(viewModel: DelayCamViewModel) {
 }
 
 @Composable
-private fun AppNavHost(navController: androidx.navigation.NavHostController, viewModel: DelayCamViewModel) {
-    NavHost(navController = navController, startDestination = Routes.LIVE) {
+private fun AppNavHost(
+    navController: androidx.navigation.NavHostController,
+    viewModel: DelayCamViewModel,
+    modifier: Modifier,
+    onOpenSaved: (android.net.Uri, String) -> Unit,
+) {
+    NavHost(navController = navController, startDestination = Routes.LIVE, modifier = modifier) {
         composable(Routes.LIVE) {
             LiveScreen(
                 viewModel = viewModel,
                 onOpenSettings = { navController.navigate(Routes.SETTINGS) },
                 onOpenGallery = { navController.navigate(Routes.GALLERY) },
+                onOpenSavedClip = onOpenSaved,
             )
         }
         composable(Routes.REPLAY) {
-            ReplayScreen(viewModel = viewModel)
+            ReplayScreen(viewModel = viewModel, onOpenSavedClip = onOpenSaved)
         }
         composable(Routes.SETTINGS) {
             SettingsScreen(viewModel = viewModel, onBack = { navController.popBackStack() })
@@ -122,3 +160,4 @@ private fun AppNavHost(navController: androidx.navigation.NavHostController, vie
         }
     }
 }
+

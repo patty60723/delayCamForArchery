@@ -9,6 +9,10 @@ import androidx.core.net.toUri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.archery.delaycam.camera.ClipExporter
+import com.archery.delaycam.camera.ClipSnapshot
+import com.archery.delaycam.camera.MediaStoreExport
+import com.archery.delaycam.camera.RecordingLifecycle
+import com.archery.delaycam.camera.RecordingPhase
 import com.archery.delaycam.camera.ContinuousRecordingSession
 import com.archery.delaycam.camera.ContinuousSegmentEncoder
 import com.archery.delaycam.camera.DelayedPlaybackController
@@ -21,6 +25,8 @@ import com.archery.delaycam.gesture.GestureEngine
 import com.archery.delaycam.settings.AppSettings
 import com.archery.delaycam.settings.SettingsRepository
 import com.archery.delaycam.state.AppState
+import com.archery.delaycam.state.SavePhase
+import com.archery.delaycam.state.SaveStatus
 import com.archery.delaycam.util.clipDisplayName
 import com.archery.delaycam.util.sessionDisplayName
 import androidx.media3.common.MediaItem
@@ -29,6 +35,10 @@ import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -37,6 +47,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.concurrent.Executors
+import java.io.File
 
 // Extra history kept on top of delaySec+backtrackSec, as slack for the time
 // it actually takes an archer to notice+react+gesture after watching their
@@ -80,6 +91,35 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
     private val _recordingElapsedSec = MutableStateFlow(0)
     val recordingElapsedSec: StateFlow<Int> = _recordingElapsedSec.asStateFlow()
 
+    private val recordingLifecycle = RecordingLifecycle()
+    private val _recordingPhase = MutableStateFlow(RecordingPhase.IDLE)
+    val recordingPhase: StateFlow<RecordingPhase> = _recordingPhase.asStateFlow()
+    private val _recordingSave = MutableStateFlow(SaveStatus())
+    val recordingSave: StateFlow<SaveStatus> = _recordingSave.asStateFlow()
+    private val _clipSave = MutableStateFlow(SaveStatus())
+    val clipSave: StateFlow<SaveStatus> = _clipSave.asStateFlow()
+    private val _mirrorVideo = MutableStateFlow(true)
+    val mirrorVideo: StateFlow<Boolean> = _mirrorVideo.asStateFlow()
+    private var recordingStartedAtElapsedMs = 0L
+    private var recordingHadGaps = false
+    private var recordingStoppedInBackground = false
+    private var pendingRecordingExport: File? = null
+    private var recordingStopTimeout: Job? = null
+    private var clipSaveJob: Job? = null
+    private var replaySnapshot: ClipSnapshot? = null
+    private var failedClipSnapshot: ClipSnapshot? = null
+    private var replayAutoReturn = true
+    private var closingCaptureSessionId: Long? = null
+    private var practiceVisible = false
+
+    private sealed interface RecordingCommand {
+        data object Start : RecordingCommand
+        data class Append(val segment: SegmentInfo) : RecordingCommand
+        data object Stop : RecordingCommand
+        data class Cleanup(val prefix: String, val shotJob: Job?) : RecordingCommand
+    }
+    private val recordingCommands = Channel<RecordingCommand>(Channel.UNLIMITED)
+
     val livePlayer: ExoPlayer = ExoPlayer.Builder(application).build()
     val replayPlayer: ExoPlayer = ExoPlayer.Builder(application).build()
 
@@ -99,7 +139,7 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
 
     val gestureEngine = GestureEngine(
         application,
-        onGesture = ::triggerSave,
+        onGesture = { triggerSave() },
         onToggleRecord = ::toggleContinuousRecording,
     )
 
@@ -126,6 +166,7 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch { warmupTicker() }
         viewModelScope.launch { recordingElapsedTicker() }
         viewModelScope.launch { livePlayerStallWatchdog() }
+        viewModelScope.launch { runRecordingCommands() }
 
         // Model load happens once here (not per-screen-visit) so navigating
         // back to Live doesn't re-init and leak a second recognizer.
@@ -140,7 +181,7 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
 
         replayPlayer.addListener(object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
-                if (playbackState == Player.STATE_ENDED) onReplayFinished()
+                if (playbackState == Player.STATE_ENDED && replayAutoReturn) onReplayFinished()
             }
         })
 
@@ -164,17 +205,31 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
     fun onAppForegrounded() {
         val sessionId = captureSession.beginForeground() ?: return
         resetDelayedPlayback()
+        gestureEngine.interactionEnabled = practiceVisible
         _warmupRemainingSec.value = settings.value.delaySec
         Log.d(TAG, "app foreground: capture session=$sessionId, warming fresh delay buffer")
         cameraAnalysisExecutor.execute {
             if (!captureSession.isCurrent(sessionId)) return@execute
+            val prefix = "capture_${sessionId}_${System.nanoTime()}"
             val encoder = ContinuousSegmentEncoder(
                 cacheDir = getApplication<Application>().cacheDir,
                 onSegmentFinalized = { segment ->
                     // Finalization posts to main. A stopped encoder can still
                     // have callbacks queued when the next Activity starts.
-                    if (captureSession.isCurrent(sessionId)) onSegmentFinalized(segment)
+                    if (captureSession.isCurrent(sessionId)) {
+                        onSegmentFinalized(segment)
+                    } else if (closingCaptureSessionId == sessionId) {
+                        appendRecordingSegment(segment)
+                    }
                 },
+                onStopped = {
+                    if (closingCaptureSessionId == sessionId) {
+                        closingCaptureSessionId = null
+                        finishRecordingAtBoundary()
+                    }
+                    recordingCommands.trySend(RecordingCommand.Cleanup(prefix, clipSaveJob))
+                },
+                filePrefix = prefix,
             )
             val currentSettings = settings.value
             encoder.setRingSize(
@@ -191,7 +246,15 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
 
     /** Called before CameraX stops receiving frames in Activity.onStop(). */
     fun onAppBackgrounded() {
+        val endingSessionId = captureSession.sessionForFrame()
         if (!captureSession.endForeground()) return
+        gestureEngine.interactionEnabled = false
+        if (recordingLifecycle.phase == RecordingPhase.STARTING ||
+            recordingLifecycle.phase == RecordingPhase.RECORDING) {
+            recordingStoppedInBackground = true
+            requestRecordingStop()
+        }
+        if (recordingLifecycle.phase == RecordingPhase.STOPPING) closingCaptureSessionId = endingSessionId
         Log.d(TAG, "app background: suspending capture and discarding old delay queue")
         resumeReplayOnForeground = replayPlayer.playWhenReady
         replayPlayer.pause()
@@ -265,12 +328,10 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
 
     private fun onSegmentFinalized(segment: SegmentInfo) {
         segmentBuffer.push(segment)
-        if (_appState.value == AppState.LIVE) {
+        if (_appState.value != AppState.REPLAY) {
             delayedPlayback.onSegmentFinalized(segment)
         }
-        if (_isContinuousRecording.value) {
-            viewModelScope.launch { continuousRecordingSession.appendSegment(segment) }
-        }
+        appendRecordingSegment(segment)
     }
 
     /**
@@ -337,51 +398,168 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
 
     private suspend fun recordingElapsedTicker() {
         while (viewModelScope.isActive) {
-            if (_isContinuousRecording.value) {
-                _recordingElapsedSec.value = (continuousRecordingSession.elapsedMs / 1000).toInt()
+            if (recordingLifecycle.phase == RecordingPhase.RECORDING) {
+                _recordingElapsedSec.value =
+                    ((SystemClock.elapsedRealtime() - recordingStartedAtElapsedMs) / 1000).toInt()
             }
-            delay(1000)
+            delay(500)
         }
     }
 
-    /**
-     * Manual button and gesture (Thumb_Up) trigger share this one path.
-     * "Just film the whole session" alternative to per-shot save - added on
-     * user feedback, ported from the web prototype's app.js. Deliberately
-     * independent of the LIVE/SAVING/REPLAY state machine (no appState
-     * guard here, unlike triggerSave): starting/stopping a session recording
-     * should keep working through per-shot saves and replays.
-     */
+    private fun publishRecordingPhase() {
+        _recordingPhase.value = recordingLifecycle.phase
+        _isContinuousRecording.value = recordingLifecycle.phase == RecordingPhase.RECORDING ||
+            recordingLifecycle.phase == RecordingPhase.STARTING
+    }
+
     fun toggleContinuousRecording() {
         if (!captureSession.isForeground()) return
-        if (_isContinuousRecording.value) {
-            viewModelScope.launch {
-                val displayName = sessionDisplayName()
-                try {
-                    continuousRecordingSession.stop(displayName)
-                    _toast.value = "已存檔:$displayName"
-                    refreshGallery()
-                } catch (e: Exception) {
-                    Log.e(TAG, "continuous recording stop/save failed", e)
-                    _toast.value = "存檔失敗:${e.message ?: "未知錯誤,請確認儲存空間是否足夠"}"
-                } finally {
-                    _isContinuousRecording.value = false
-                    _recordingElapsedSec.value = 0
-                }
+        when (recordingLifecycle.phase) {
+            RecordingPhase.IDLE -> {
+                if (pendingRecordingExport != null || _recordingSave.value.phase == SavePhase.SAVING) return
+                if (!recordingLifecycle.beginStart()) return
+                recordingStartedAtElapsedMs = SystemClock.elapsedRealtime()
+                recordingHadGaps = false
+                recordingStoppedInBackground = false
+                _recordingElapsedSec.value = 0
+                _recordingSave.value = SaveStatus()
+                publishRecordingPhase()
+                recordingCommands.trySend(RecordingCommand.Start)
             }
-        } else {
-            viewModelScope.launch {
-                try {
-                    continuousRecordingSession.start()
-                    _isContinuousRecording.value = true
-                    _toast.value = "開始連續錄影"
-                } catch (e: Exception) {
-                    Log.e(TAG, "continuous recording start failed", e)
-                    _toast.value = "無法開始錄影:${e.message ?: "未知錯誤"}"
+            RecordingPhase.RECORDING -> requestRecordingStop()
+            RecordingPhase.STARTING, RecordingPhase.STOPPING -> Unit
+        }
+    }
+
+    private fun requestRecordingStop() {
+        if (!recordingLifecycle.requestStop(System.currentTimeMillis())) return
+        _recordingElapsedSec.value =
+            ((SystemClock.elapsedRealtime() - recordingStartedAtElapsedMs) / 1000).toInt()
+        _recordingSave.value = SaveStatus(SavePhase.SAVING, message = "正在完成錄影並保存…")
+        publishRecordingPhase()
+        // Usually the next segment (or encoder shutdown callback) supplies the tail.
+        // Missing camera output must not leave a permanent busy state.
+        recordingStopTimeout?.cancel()
+        recordingStopTimeout = viewModelScope.launch {
+            delay(5_000)
+            if (recordingLifecycle.phase == RecordingPhase.STOPPING) {
+                recordingHadGaps = true
+                finishRecordingAtBoundary()
+            }
+        }
+    }
+
+    private fun appendRecordingSegment(segment: SegmentInfo) {
+        if (!recordingLifecycle.acceptsSegments()) return
+        recordingCommands.trySend(RecordingCommand.Append(segment))
+        if (recordingLifecycle.reachesStopBoundary(segment.endedAtMs)) finishRecordingAtBoundary()
+    }
+
+    private fun finishRecordingAtBoundary() {
+        if (!recordingLifecycle.queueStop()) return
+        recordingStopTimeout?.cancel()
+        recordingCommands.trySend(RecordingCommand.Stop)
+    }
+
+    private suspend fun runRecordingCommands() {
+        for (command in recordingCommands) {
+            when (command) {
+                RecordingCommand.Start -> {
+                    try {
+                        continuousRecordingSession.start()
+                        recordingLifecycle.started()
+                        publishRecordingPhase()
+                    } catch (e: Exception) {
+                        Log.e(TAG, "recording start failed", e)
+                        recordingLifecycle.finished()
+                        publishRecordingPhase()
+                        _recordingSave.value = SaveStatus(SavePhase.FAILED,
+                            message = "無法開始錄影，請確認儲存空間後再試")
+                    }
+                }
+                is RecordingCommand.Append -> {
+                    try {
+                        continuousRecordingSession.appendSegment(command.segment)
+                    } catch (e: Exception) {
+                        recordingHadGaps = true
+                        Log.e(TAG, "recording segment was not appended", e)
+                    }
+                }
+                RecordingCommand.Stop -> {
+                    if (recordingLifecycle.phase != RecordingPhase.STOPPING) continue
+                    // Finish a user-requested save even if the Activity is finishing.
+                    withContext(NonCancellable) {
+                        val displayName = sessionDisplayName()
+                        _recordingSave.value = _recordingSave.value.copy(displayName = displayName)
+                        try {
+                            pendingRecordingExport = continuousRecordingSession.stopToFile()
+                            exportPendingRecording(displayName)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "recording finalization/save failed", e)
+                            _recordingSave.value = SaveStatus(SavePhase.FAILED,
+                                displayName = displayName,
+                                message = if (pendingRecordingExport != null)
+                                    "錄影儲存失敗，請確認空間後重試"
+                                else "錄影未能完成，請重新開始",
+                                retryable = pendingRecordingExport != null)
+                        } finally {
+                            recordingLifecycle.finished()
+                            publishRecordingPhase()
+                        }
+                    }
+                }
+                is RecordingCommand.Cleanup -> {
+                    command.shotJob?.join()
+                    withContext(Dispatchers.IO) {
+                        getApplication<Application>().cacheDir.listFiles()
+                            ?.filter { it.name.startsWith(command.prefix + "_segment_") }
+                            ?.forEach { it.delete() }
+                    }
                 }
             }
         }
     }
+
+    private suspend fun exportPendingRecording(displayName: String) {
+        val file = pendingRecordingExport ?: return
+        val uri = withContext(Dispatchers.IO) {
+            MediaStoreExport.saveVideoToMediaStore(getApplication(), file, displayName)
+        }
+        pendingRecordingExport = null
+        withContext(Dispatchers.IO) { file.delete() }
+        val message = when {
+            recordingHadGaps -> "已保存；有片段未確認，請查看影片"
+            recordingStoppedInBackground -> "上一段已保存，錄影已停止"
+            else -> "錄影已保存"
+        }
+        _recordingSave.value = SaveStatus(SavePhase.SAVED, uri, displayName, message)
+        refreshGallery()
+    }
+
+    fun retryRecordingSave() {
+        if (_recordingSave.value.phase != SavePhase.FAILED || pendingRecordingExport == null) return
+        val name = _recordingSave.value.displayName
+        _recordingSave.value = SaveStatus(SavePhase.SAVING, displayName = name, message = "錄影儲存中…")
+        viewModelScope.launch {
+            withContext(NonCancellable) {
+                try { exportPendingRecording(name) }
+                catch (e: Exception) {
+                    Log.e(TAG, "recording save retry failed", e)
+                    _recordingSave.value = SaveStatus(SavePhase.FAILED, displayName = name,
+                        message = "錄影儲存失敗，請確認空間後重試", retryable = true)
+                }
+            }
+        }
+    }
+
+    fun setPracticeVisible(visible: Boolean) {
+        practiceVisible = visible
+        gestureEngine.interactionEnabled = visible && captureSession.isForeground()
+    }
+
+    fun setMirrorVideo(mirrored: Boolean) { _mirrorVideo.value = mirrored }
+
+    fun markReplayInteraction() { replayAutoReturn = false }
 
     /**
      * Manual button and gesture trigger share this one path (spec 3.1).
@@ -397,64 +575,103 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
      * took a couple of seconds). The saved/replayed clip still runs through
      * to the actual present moment (now), just starting further back.
      */
-    fun triggerSave() {
-        if (!captureSession.isForeground()) return
-        // Diagnostic for "Open_Palm gesture never seems to do anything":
-        // GestureEngine posts here whenever it fires, so if this log line
-        // never shows up at all, the gesture itself isn't being recognized
-        // (a GestureEngine-side detection/threshold issue, not this
-        // function). If it does show up but nothing visibly happens, one of
-        // the two guards below is the cause - logging exactly which.
-        Log.d(TAG, "triggerSave() called, appState=${_appState.value}")
-        if (_appState.value != AppState.LIVE) {
-            Log.d(TAG, "triggerSave() ignored: appState is not LIVE")
+    fun triggerSave(playAfterSave: Boolean = true) {
+        if (!captureSession.isForeground() || _appState.value != AppState.LIVE ||
+            _clipSave.value.phase == SavePhase.SAVING) return
+        if (failedClipSnapshot != null) {
+            _toast.value = "請先重試保存上一段影片"
             return
         }
         val currentSettings = settings.value
         val now = System.currentTimeMillis()
         val shotReferenceMs = now - currentSettings.delaySec * 1000L
-        val segments = segmentBuffer.segmentsCoveringRange(shotReferenceMs - currentSettings.backtrackSec * 1000L, now)
+        val segments = segmentBuffer.segmentsCoveringRange(
+            shotReferenceMs - currentSettings.backtrackSec * 1000L, now)
         if (segments.isEmpty()) {
-            Log.d(TAG, "triggerSave() ignored: segmentBuffer had nothing covering the backtrack window")
-            _toast.value = "緩衝畫面還不夠,請再等一下"
+            _toast.value = "延遲畫面還在準備，請稍候再存檔"
             return
         }
-
-        _appState.value = AppState.SAVING
+        if (playAfterSave) _appState.value = AppState.SAVING
         gestureEngine.locked = true
-
-        // Background export for the gallery - the on-screen replay does not wait on this
-        // (see ClipExporter's doc comment for the concatenation caveats).
         val displayName = clipDisplayName()
-        viewModelScope.launch {
+        _clipSave.value = SaveStatus(SavePhase.SAVING, displayName = displayName, message = "單箭儲存中…")
+        clipSaveJob = viewModelScope.launch {
+            var snapshot: ClipSnapshot? = null
             try {
-                ClipExporter.export(getApplication(), segments, displayName)
-                _toast.value = "已存檔:$displayName"
-                refreshGallery()
+                val copied = ClipSnapshot.copy(getApplication<Application>().cacheDir, segments)
+                snapshot = copied
+                if (playAfterSave && captureSession.isForeground() && _appState.value == AppState.SAVING) {
+                    replaySnapshot = copied
+                    replayAutoReturn = true
+                    replayPlayer.stop()
+                    replayPlayer.clearMediaItems()
+                    copied.segments.forEach { replayPlayer.addMediaItem(MediaItem.fromUri(it.file.toUri())) }
+                    replayPlayer.playbackParameters = PlaybackParameters(currentSettings.slowMoRate)
+                    replayPlayer.prepare()
+                    replayPlayer.playWhenReady = true
+                    livePlayer.pause()
+                    _appState.value = AppState.REPLAY
+                } else if (_appState.value == AppState.SAVING) {
+                    _appState.value = AppState.LIVE
+                }
+                exportShot(copied, displayName)
             } catch (e: Exception) {
-                Log.e(TAG, "per-shot backtrack save failed", e)
-                _toast.value = "存檔失敗:${e.message ?: "未知錯誤,請確認儲存空間是否足夠"}"
+                Log.e(TAG, "shot snapshot/export failed", e)
+                failedClipSnapshot = snapshot
+                _clipSave.value = SaveStatus(SavePhase.FAILED, displayName = displayName,
+                    message = if (snapshot != null) "單箭儲存失敗，請確認空間後重試"
+                    else "單箭未能保存，請確認空間後再存檔", retryable = snapshot != null)
+                if (_appState.value == AppState.SAVING) _appState.value = AppState.LIVE
+            } finally {
+                gestureEngine.locked = _appState.value == AppState.REPLAY
+                val unused = snapshot
+                if (unused != null && unused !== replaySnapshot && unused !== failedClipSnapshot) {
+                    withContext(Dispatchers.IO) { unused.delete() }
+                }
             }
         }
-
-        // Instant replay straight off the raw segment files at the chosen slow-mo speed -
-        // no need to wait for the export above to finish.
-        replayPlayer.stop()
-        replayPlayer.clearMediaItems()
-        segments.forEach { replayPlayer.addMediaItem(MediaItem.fromUri(it.file.toUri())) }
-        replayPlayer.playbackParameters = PlaybackParameters(currentSettings.slowMoRate)
-        replayPlayer.prepare()
-        replayPlayer.playWhenReady = true
-        _appState.value = AppState.REPLAY
     }
 
-    /** "立即返回" button. */
+    private suspend fun exportShot(snapshot: ClipSnapshot, displayName: String) {
+        val uri = ClipExporter.export(getApplication(), snapshot.segments, displayName)
+        if (failedClipSnapshot === snapshot) failedClipSnapshot = null
+        _clipSave.value = SaveStatus(SavePhase.SAVED, uri, displayName, "單箭已保存")
+        refreshGallery()
+    }
+
+    fun retryClipSave() {
+        val snapshot = failedClipSnapshot ?: return
+        if (_clipSave.value.phase != SavePhase.FAILED) return
+        val name = _clipSave.value.displayName
+        _clipSave.value = SaveStatus(SavePhase.SAVING, displayName = name, message = "單箭儲存中…")
+        clipSaveJob = viewModelScope.launch {
+            try { exportShot(snapshot, name) }
+            catch (e: Exception) {
+                Log.e(TAG, "shot save retry failed", e)
+                _clipSave.value = SaveStatus(SavePhase.FAILED, displayName = name,
+                    message = "單箭儲存失敗，請確認空間後重試", retryable = true)
+            } finally {
+                if (snapshot !== failedClipSnapshot && snapshot !== replaySnapshot) {
+                    withContext(Dispatchers.IO) { snapshot.delete() }
+                }
+            }
+        }
+    }
+
+    /** Explicit return or untouched replay finishing. */
     fun skipReplay() = onReplayFinished()
 
     private fun onReplayFinished() {
         if (_appState.value != AppState.REPLAY) return
         replayPlayer.stop()
         replayPlayer.clearMediaItems()
+        val snapshot = replaySnapshot
+        replaySnapshot = null
+        val saveJob = clipSaveJob
+        if (snapshot != null) viewModelScope.launch {
+            saveJob?.join()
+            if (snapshot !== failedClipSnapshot) withContext(Dispatchers.IO) { snapshot.delete() }
+        }
         // The backlog scheduled during the replay covers a window the archer
         // already watched - drop it and re-warm-up rather than dumping it in.
         delayedPlayback.reset()
@@ -475,10 +692,16 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    fun deleteClip(uri: android.net.Uri) {
+    fun deleteClip(uri: android.net.Uri, onDeleted: () -> Unit = {}) {
         viewModelScope.launch {
-            galleryRepository.deleteClip(uri)
-            refreshGallery()
+            try {
+                galleryRepository.deleteClip(uri)
+                refreshGallery()
+                onDeleted()
+            } catch (e: Exception) {
+                Log.e(TAG, "delete clip failed", e)
+                _toast.value = "影片未能刪除，請稍後再試"
+            }
         }
     }
 
@@ -493,9 +716,11 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
             gestureEngine.close()
         }
         cameraAnalysisExecutor.shutdown()
-        continuousRecordingSession.releaseImmediate()
+        recordingCommands.close()
+        CoroutineScope(Dispatchers.IO).launch { continuousRecordingSession.releaseResources() }
         livePlayer.release()
         replayPlayer.release()
         super.onCleared()
     }
 }
+

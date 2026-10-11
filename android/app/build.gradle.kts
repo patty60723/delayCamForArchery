@@ -16,14 +16,15 @@ android {
         // so this costs nothing on any reasonably current test device.
         minSdk = 29
         targetSdk = 34
-        versionCode = 2
-        versionName = "0.1.0-skeleton"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        versionCode = 3
+        versionName = "0.2.0"
     }
 
     buildTypes {
         debug {
-            applicationIdSuffix = ".delayfix2"
-            versionNameSuffix = "-delayfix2"
+            applicationIdSuffix = ".delayfix3"
+            versionNameSuffix = "-recording-ux"
         }
         release {
             isMinifyEnabled = false
@@ -99,3 +100,4 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 }
+

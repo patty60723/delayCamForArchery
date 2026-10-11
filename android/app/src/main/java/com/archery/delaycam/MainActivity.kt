@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.util.Log
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -41,11 +42,13 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         viewModel.onAppForegrounded()
     }
 
     override fun onStop() {
         viewModel.onAppBackgrounded()
+        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         super.onStop()
     }
 
@@ -169,3 +172,4 @@ private fun CameraPermissionGate(onRequestPermission: () -> Unit) {
     }
     LaunchedEffect(Unit) { onRequestPermission() }
 }
+
