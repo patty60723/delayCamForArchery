@@ -21,6 +21,12 @@ IDLE → STARTING → RECORDING → STOPPING → IDLE。開始／停止由同一
 
 短期採前景錄影：切背景停止並保存；返回呈現真實保存狀態，由使用者點繼續錄影建立新段，延遲畫面重新準備。旋轉造成 Activity 重建時也遵循相同政策，不承諾無縫續錄。
 
+## Practice Layout and Warmup
+
+依使用者對修正版 3 的回饋，暖機保留轉圈圈和明確剩餘秒數，說明正在建立延遲畫面；倒數到 0 仍等待第一個延遲畫格，不能僅因計時結束宣告已就緒。狀態仍由 ViewModel 的 warmupRemainingSec／onRenderedFirstFrame 擁有。
+
+LivePracticeLayout 在寬大於高的可用區域採影片與右側控制欄，影片不再被標題與兩排操作壓縮高度；窄橫向亦適用，直向保持既有上下配置。使用 FIT，不裁掉身體。LiveSaveActions 讓兩種配置使用同一保存動作與禁用規則。橫向控制欄可捲動，大字／保存回饋不占用影片高度。LivePracticeUiTest 驗證橫向、窄橫向、直向和暖機狀態。
+
 ## Playback
 
 存檔並回看：保護片段副本 → 即時慢動作 → 保存獨立進行。只保存：留在延遲畫面。正常單次回放結束可返回；使用者暫停、拖曳、跳轉、切速度或鏡像後，停留回放直到明確返回。

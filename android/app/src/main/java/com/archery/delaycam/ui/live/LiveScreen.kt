@@ -36,29 +36,38 @@ fun LiveScreen(
     val canSave = state == AppState.LIVE && warmup == null &&
         save.phase != SavePhase.SAVING && !(save.phase == SavePhase.FAILED && save.retryable)
 
-    Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp),
-            verticalAlignment = Alignment.CenterVertically) {
-            Text("延遲設定 " + settings.delaySec + " 秒 · " +
-                if (warmup == null) "已就緒" else "準備中",
-                Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
-            TextButton(onClick = onOpenGallery) { Text("影片") }
-            TextButton(onClick = onOpenSettings) { Text("設定") }
-        }
-        SaveStatusNotice(save, viewModel::retryClipSave, onOpenSavedClip)
-        Box(Modifier.weight(1f).fillMaxWidth()) {
-            VideoPlayer(viewModel.livePlayer, mirrored, Modifier.fillMaxSize())
-            GuideOverlay(settings.guideVertical, settings.guideHorizontal, Modifier.fillMaxSize())
-            if (warmup != null) {
-                Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
-                    CircularProgressIndicator()
-                    Text(if (warmup == 0) "等待延遲影片就緒…" else "準備延遲畫面…" + warmup + " 秒",
-                        Modifier.padding(top = 12.dp))
+    LivePracticeLayout(
+        header = { sidePanel ->
+            val status = "延遲設定 " + settings.delaySec + " 秒 · " +
+                if (warmup == null) "已就緒" else "準備中"
+            if (sidePanel) {
+                Text(status, Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                    style = MaterialTheme.typography.titleSmall)
+                Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp)) {
+                    TextButton(onClick = onOpenGallery, modifier = Modifier.weight(1f)) { Text("影片") }
+                    TextButton(onClick = onOpenSettings, modifier = Modifier.weight(1f)) { Text("設定") }
+                }
+            } else {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Text(status, Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
+                    TextButton(onClick = onOpenGallery) { Text("影片") }
+                    TextButton(onClick = onOpenSettings) { Text("設定") }
                 }
             }
+            SaveStatusNotice(save, viewModel::retryClipSave, onOpenSavedClip)
+        },
+        video = { videoModifier -> BoxWithConstraints(videoModifier) {
+            VideoPlayer(viewModel.livePlayer, mirrored, Modifier.fillMaxSize())
+            GuideOverlay(settings.guideVertical, settings.guideHorizontal, Modifier.fillMaxSize())
+            warmup?.let { remaining ->
+                DelayWarmupIndicator(remaining, settings.delaySec, Modifier.align(Alignment.Center))
+            }
             if (showPreview) {
+                val previewWidth = if (maxWidth > maxHeight) (maxHeight * 0.24f).coerceIn(64.dp, 96.dp)
+                    else 96.dp
                 Column(Modifier.align(if (settings.dominantHand == DominantHand.LEFT)
-                    Alignment.TopEnd else Alignment.TopStart).padding(8.dp).width(96.dp)
+                    Alignment.TopEnd else Alignment.TopStart).padding(8.dp).width(previewWidth)
                     .background(MaterialTheme.colorScheme.surface)) {
                     Text("即時", Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                         style = MaterialTheme.typography.labelMedium)
@@ -70,22 +79,22 @@ fun LiveScreen(
                             .semantics { contentDescription = "即時相機取景" })
                 }
             }
-        }
-        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = { viewModel.triggerSave() }, enabled = canSave,
-                modifier = Modifier.weight(1.2f).heightIn(min = 56.dp)) { Text("存檔並回看") }
-            OutlinedButton(onClick = { viewModel.triggerSave(playAfterSave = false) }, enabled = canSave,
-                modifier = Modifier.weight(1f).heightIn(min = 56.dp)) { Text("只保存") }
-        }
-        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp),
-            horizontalArrangement = Arrangement.SpaceBetween) {
-            TextButton(onClick = { showPreview = !showPreview }) {
-                Text(if (showPreview) "收起即時視窗" else "顯示即時視窗")
+        } },
+        controls = { sidePanel ->
+            LiveSaveActions(canSave, sidePanel,
+                onSaveAndReview = { viewModel.triggerSave() },
+                onSaveOnly = { viewModel.triggerSave(playAfterSave = false) })
+            Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween) {
+                TextButton(onClick = { showPreview = !showPreview }) {
+                    Text(if (sidePanel) { if (showPreview) "收起即時" else "顯示即時" }
+                        else { if (showPreview) "收起即時視窗" else "顯示即時視窗" })
+                }
+                TextButton(onClick = { showHelp = true }) { Text("操作說明") }
             }
-            TextButton(onClick = { showHelp = true }) { Text("操作說明") }
-        }
-    }
+        },
+        modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
+    )
     if (showHelp) AlertDialog(
         onDismissRequest = { showHelp = false },
         title = { Text("練習操作") },
