@@ -60,7 +60,26 @@ onStart → 新 session → executor 建立新編碼器 → 標記 ready
 
 新增七個 JVM 單元測試，驗證 session 在初次啟動、進入背景、返回前景、重複通知、快速往返及永久清除時，正確拒絕舊工作並只接受目前 session 的影格。這些測試驗證 session 協調邏輯；不會模擬 CameraX、TextureView 或 Pixel 的 MediaCodec。
 
-GitHub Actions 執行單元測試、編譯 APK，並以 `apksigner` 驗證簽章。實際建置結果與下載紀錄將於完成後補上；這份來源修正尚不代表 Pixel 實機驗證通過。
+GitHub Actions 已完成單元測試、編譯 APK，並以 `apksigner` 驗證簽章：
+
+| 項目 | 結果 |
+| --- | --- |
+| APK 來源 commit | `219166d5f6031b34fb8f877bdf4fde5a00b21f72` |
+| Actions run | [38141418090](https://github.com/patty60723/delayCamForArchery/actions/runs/38141418090) |
+| JVM 單元測試 | 7 個，failures 0、errors 0、skipped 0 |
+| 編譯 | `BUILD SUCCESSFUL in 2m 18s` |
+| 簽章 | `Verifies`，APK Signature Scheme v2 為 true |
+| APK 下載 | [delaycam-foreground-fix-apk](https://github.com/patty60723/delayCamForArchery/actions/runs/38141418090/artifacts/11703382673)，ZIP 約 40 MB |
+| Artifact 到期 | 2026-10-25 13:02:35 UTC |
+| Pixel 實機 | 尚待使用者安裝修正版 2 後驗證 |
+
+解壓縮後 `app-debug.apk` 的 SHA-256：
+
+```text
+7162173ec9bd4613feb7d704fd958834ac07c5cbb75793e3bea8d8255934f7b8
+```
+
+以上 CI 驗證通過尚不代表 Pixel 實機的背景／前景往返已驗證通過。只有文件的後續 commit 不會改變已交付 APK 的來源版本。
 
 實機驗收：
 
