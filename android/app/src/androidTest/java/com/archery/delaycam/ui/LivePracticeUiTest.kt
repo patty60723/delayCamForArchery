@@ -13,6 +13,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -136,6 +138,12 @@ class LivePracticeUiTest {
         } }
         compose.onNodeWithContentDescription("暖機剩餘 10 秒").assertIsDisplayed()
         compose.onNodeWithText("正在建立 10 秒延遲，請稍候").assertIsDisplayed()
+        val pixels = compose.onNodeWithText("10").captureToImage().toPixelMap()
+        var lightInk = false
+        for (y in 0 until pixels.height) for (x in 0 until pixels.width) {
+            if (pixels[x, y].luminance() > 0.5f) lightInk = true
+        }
+        assertTrue("Countdown must have readable light ink on the dark background", lightInk)
         screenshot("live-warmup-countdown")
         compose.runOnIdle { remaining = 3 }
         compose.onNodeWithContentDescription("暖機剩餘 3 秒").assertIsDisplayed()

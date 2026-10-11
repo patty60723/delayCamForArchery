@@ -10,6 +10,8 @@ LivePracticeLayout 依可用區域寬高切換配置。橫向將練習標題、�
 
 DelayWarmupIndicator 在轉圈圈中央顯示大字剩餘秒數與單位，並說明正在建立設定的延遲。倒數到 0 秒仍保留圈圈與「正在等待第一個延遲畫面…」；真正收到 onRenderedFirstFrame 才移除，保留先前避免假就緒的修正。暖機時仍不能保存單箭。
 
+模擬器截圖還發現，MaterialTheme 雖設定深色色票，但主畫面未提供 Surface 的預設文字色，直接置於背景的 Text 會使用黑色；半透明 Surface 也無法靠完全相等的色票比對自動取得文字色。Theme.kt 現在提供 onBackground 作為全域 LocalContentColor，暖機 Surface 另明確指定 onSurface，讓秒數與說明保持可讀。
+
 ## 覆蓋更新
 
 版本提高為 0.2.1、versionCode 4，名稱維持「射箭 Delay Camera 修正版 3」，套件維持 com.archery.delaycam.delayfix3。CI 使用上次交付的同一 debug 簽章，並在建置時比較憑證 SHA-256，若不一致則不交付 APK。
@@ -21,6 +23,8 @@ GitHub 分支快取仍不是正式簽章備份；正式持續發佈應使用受�
 ## 驗證
 
 新增 LivePracticeUiTest：原生 Android 模擬器切換橫直方向，確認橫向及 560 dp 窄橫向影片使用完整可用高度、至少 60% 可用寬度，控制在側邊且兩個保存按鈕可見；直向控制仍位於影片下方。另檢查 10 → 3 → 0 秒與收到就緒狀態後移除暖機提示。
+
+暖機測試另擷取數字實際繪製像素，確認深色背景上存在明亮文字，避免語意節點存在但肉眼看不清的問題。
 
 截圖的影片區使用版面測試佔位內容；不是實機 CameraX 或延遲 MP4 的錄影證據。實際 Pixel 的畫面比例與長時間拍攝仍需安裝後確認。
 

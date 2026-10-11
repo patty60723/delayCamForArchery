@@ -35,6 +35,8 @@ components:
 
 Runtime tokens 是唯一色彩來源：`ui/theme/Color.kt` → `ui/theme/Theme.kt` → `MaterialTheme.colorScheme` → 共用元件。本文件記錄現有色票，不生成另一套 CSS。前述 component px 僅供文件格式表達；Android 實作對應 dp，不是實體像素。
 
+Theme.kt 同時設定全域 LocalContentColor 為 onBackground，讓直接位於深色背景的 Text 保持可讀；半透明暖機 Surface 明確使用 onSurface，避免透明色無法對應色票而退回黑色文字。
+
 ## Colors
 
 橙色代表主要操作，黑底讓影片優先；面板採現有深灰。錄影和錯誤都搭配文字，不只靠紅色傳達。停止錄影採次要按鈕；刪除則在確認對話框清楚標示。

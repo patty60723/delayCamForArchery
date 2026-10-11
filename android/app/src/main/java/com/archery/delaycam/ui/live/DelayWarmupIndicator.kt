@@ -17,6 +17,7 @@ fun DelayWarmupIndicator(remainingSec: Int, delaySec: Int, modifier: Modifier = 
     val seconds = remainingSec.coerceAtLeast(0)
     Surface(modifier.widthIn(max = 320.dp).testTag("delay-warmup"),
         color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+        contentColor = MaterialTheme.colorScheme.onSurface,
         shape = MaterialTheme.shapes.medium) {
         Column(Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(8.dp)) {
