@@ -16,8 +16,13 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.Text
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.boundsInRoot
 import androidx.test.platform.app.InstrumentationRegistry
 import com.archery.delaycam.ui.live.LiveCameraPreview
+import com.archery.delaycam.ui.live.PracticeCameraLayout
 import com.archery.delaycam.ui.theme.DelayCamTheme
 import org.junit.Assert.assertSame
 import org.junit.Rule
@@ -28,6 +33,53 @@ import java.util.concurrent.atomic.AtomicInteger
 
 class LiveCameraPreviewTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
+
+    @Test fun previewHostSurvivesLeavingLiveForReplayAndReturning() {
+        val activity = compose.activity
+        InstrumentationRegistry.getInstrumentation().uiAutomation
+            .grantRuntimePermission(activity.packageName, Manifest.permission.CAMERA)
+        val provider = ProcessCameraProvider.getInstance(activity).get(10, TimeUnit.SECONDS)
+        val preview = Preview.Builder().build()
+        val analysis = ImageAnalysis.Builder()
+            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST).build()
+        val executor = Executors.newSingleThreadExecutor()
+        val frames = AtomicInteger()
+        analysis.setAnalyzer(executor) { frame -> frames.incrementAndGet(); frame.close() }
+        var live by mutableStateOf(true)
+        try {
+            compose.setContent { DelayCamTheme {
+                PracticeCameraLayout(preview, live) { report ->
+                    if (live) Box(Modifier.size(96.dp, 128.dp)
+                        .onGloballyPositioned { report(it.boundsInRoot()) })
+                    else Text("回放畫面（相機連接測試）")
+                }
+            } }
+            compose.runOnIdle {
+                provider.bindToLifecycle(activity, CameraSelector.DEFAULT_FRONT_CAMERA, preview, analysis)
+            }
+            compose.waitUntil(20_000) { frames.get() >= 3 }
+            lateinit var host: PreviewView
+            compose.runOnIdle { host = activity.window.decorView.findViewWithTag("live-camera-preview-host") }
+            val beforeReplay = frames.get()
+            compose.runOnIdle { live = false }
+            compose.onNodeWithContentDescription("即時相機取景").assertDoesNotExist()
+            compose.waitUntil(10_000) { frames.get() >= beforeReplay + 3 }
+            compose.runOnIdle {
+                assertSame(host, activity.window.decorView.findViewWithTag<PreviewView>("live-camera-preview-host"))
+                live = true
+            }
+            val beforeReturn = frames.get()
+            compose.waitUntil(10_000) { frames.get() >= beforeReturn + 3 }
+            compose.onNodeWithContentDescription("即時相機取景").assertIsDisplayed()
+            compose.runOnIdle {
+                assertSame(host, activity.window.decorView.findViewWithTag<PreviewView>("live-camera-preview-host"))
+            }
+        } finally {
+            compose.runOnIdle { provider.unbindAll() }
+            analysis.clearAnalyzer()
+            executor.shutdown()
+        }
+    }
 
     @Test fun hiddenPreviewStartsCameraAndTogglingKeepsItsHostAndFrames() {
         val activity = compose.activity

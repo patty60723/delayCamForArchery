@@ -15,10 +15,17 @@ import com.archery.delaycam.ui.playback.*
 fun ReplayScreen(viewModel: DelayCamViewModel, onOpenSavedClip: (Uri, String) -> Unit) {
     val save by viewModel.clipSave.collectAsState()
     val mirrored by viewModel.mirrorVideo.collectAsState()
+    val remaining by viewModel.replayReturnRemainingSec.collectAsState()
+    var help by remember { mutableStateOf(false) }
     BackHandler { viewModel.skipReplay() }
     Column(Modifier.fillMaxSize()) {
-        Text("回放", Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-            style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            Text("回放", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.primary)
+            TextButton(onClick = { viewModel.markReplayInteraction(); help = true }) { Text("手勢說明") }
+        }
+        ReplayReturnNotice(remaining)
         SaveStatusNotice(save, viewModel::retryClipSave, onOpenSavedClip)
         Box(Modifier.weight(1f)) {
             MediaReviewLayout(
@@ -30,6 +37,7 @@ fun ReplayScreen(viewModel: DelayCamViewModel, onOpenSavedClip: (Uri, String) ->
                         onMirrorChange = viewModel::setMirrorVideo,
                         onSpeedChange = { rate -> viewModel.updateSettings { it.copy(slowMoRate = rate) } },
                         onUserInteraction = viewModel::markReplayInteraction,
+                        controller = viewModel.replayPlayback,
                     )
                     OutlinedButton(onClick = viewModel::skipReplay,
                         modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp).heightIn(min = 48.dp)) {
@@ -39,4 +47,14 @@ fun ReplayScreen(viewModel: DelayCamViewModel, onOpenSavedClip: (Uri, String) ->
             )
         }
     }
+    if (help) AlertDialog(onDismissRequest = { help = false }, title = { Text("回放手勢") },
+        text = { Text("拇指朝下：返回練習。\n食指朝上：加快一檔，最高 1×。\nV 手勢：放慢一檔，最低 0.25×。\n五指張開：同一段從頭重播。\n比讚：開始或停止整段錄影。\n\n每次保持約半秒，再放下手，才能接受下一次。回放重播不會重複存檔。") },
+        confirmButton = { TextButton(onClick = { help = false }) { Text("知道了") } })
+}
+
+@Composable
+fun ReplayReturnNotice(remaining: Int?) {
+    remaining?.let { Text("${it.coerceAtLeast(0)} 秒後返回練習 · 五指可重播",
+        Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+        style = MaterialTheme.typography.bodyMedium) }
 }
