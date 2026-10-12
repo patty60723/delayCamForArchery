@@ -139,6 +139,9 @@ class MediaExportTest {
                 val retriever = MediaMetadataRetriever()
                 try {
                     retriever.setDataSource(segment.file.absolutePath)
+                    val actualDuration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)!!.toLong()
+                    assertTrue("MP4 duration=$actualDuration must match seek duration=${segment.mediaDurationMs}",
+                        kotlin.math.abs(actualDuration - segment.mediaDurationMs) <= 200L)
                     val frame = retriever.getFrameAtTime(0)
                     assertNotNull(frame)
                     frame?.recycle()
