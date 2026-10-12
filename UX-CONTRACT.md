@@ -8,6 +8,8 @@
 | --- | --- | --- | --- | --- |
 | Toast | DelayCamNavHost / RecordingControls / SaveStatusNotice | 本文件 Feedback | 一般短提示；保存狀態持續顯示 | RecordingPlaybackUiTest |
 | CRUD | DelayCamViewModel / PlayerScreen | 本文件 Playback | 手動開啟保存結果；刪除確認 | RecordingPlaybackUiTest / 裝置驗收 |
+| Recording | RecordingScreenLayout / RecordingControls | 本文件 Recording | 一般頂部列；橫向練習浮動 compact 版本，共用狀態與按鈕規則 | RecordingPlaybackUiTest / LivePracticeUiTest |
+| Practice controls | LivePracticeLayout / LiveSaveActions | 本文件 Practice Layout and Warmup | 直向下方；橫向非模態可收起面板 | LivePracticeUiTest |
 
 表格、日期輸入、選單、表單與網頁 scrollbar 不適用於這次原生 Android 變更。
 
@@ -15,7 +17,7 @@
 
 IDLE → STARTING → RECORDING → STOPPING → IDLE。開始／停止由同一個入口處理，忙碌時禁用重複切換；手勢一次保持只觸發一次，放下後重新啟用。手勢只在練習和即時回放頁作用。
 
-錄影列置於導航之外，因此跨 LIVE、Replay、相簿、播放器與設定維持一致。計時使用單調時鐘，請求停止時凍結，不把桌面時間計入。
+錄影控制置於導航之外，因此跨 LIVE、Replay、相簿、播放器與設定維持一致。橫向 LIVE 使用 compact 浮動控制，不占導航高度；其他頁與直向保持頂部列。RecordingScreenLayout 讓導航內容保持單一 composition 位置，切換控制樣式不建立第二個導航或播放器。計時使用單調時鐘，請求停止時凍結，不把桌面時間計入。
 
 停止先等待含尾段的片段或編碼器完成事件，再保存。若 5 秒內沒有完成事件，保存已取得的內容並顯示末段未確認，不宣稱完整。保存要求在 Activity 結束時仍盡力完成；程序被系統終止後的復原屬後續範圍。
 
@@ -25,7 +27,9 @@ IDLE → STARTING → RECORDING → STOPPING → IDLE。開始／停止由同一
 
 依使用者對修正版 3 的回饋，暖機保留轉圈圈和明確剩餘秒數，說明正在建立延遲畫面；倒數到 0 仍等待第一個延遲畫格，不能僅因計時結束宣告已就緒。狀態仍由 ViewModel 的 warmupRemainingSec／onRenderedFirstFrame 擁有。
 
-LivePracticeLayout 在寬大於高的可用區域採影片與右側控制欄，影片不再被標題與兩排操作壓縮高度；窄橫向亦適用，直向保持既有上下配置。使用 FIT，不裁掉身體。LiveSaveActions 讓兩種配置使用同一保存動作與禁用規則。橫向控制欄可捲動，大字／保存回饋不占用影片高度。LivePracticeUiTest 驗證橫向、窄橫向、直向和暖機狀態。
+LivePracticeLayout 在寬大於高的可用區域讓影片占滿安全區內全部寬、高，取消上一版固定側欄。操作面板預設收起，由「操作」展開；面板覆蓋影片邊緣而不重新量測播放器尺寸，按「收起」或系統返回關閉。它是非模態面板，不鎖定焦點、不阻斷其他操作；展開／收起本身不保存、不改變錄影、不導頁。窄橫向亦適用，面板可捲動。直向保持既有上下配置。使用 FIT，不裁掉身體；來源比例不符螢幕時仍保留黑邊。
+
+左上錄影時間、停止／開始和整段保存結果不隨面板收起；單箭保存結果在左下共用 SaveStatusNotice 顯示，成功查看與失敗重試皆保留。LiveSaveActions 使用同一保存動作與禁用規則。橫向即時小窗預設收起，與直向分別保存顯示選擇。暖機仍由同一 DelayWarmupIndicator 顯示，不省略秒數。LivePracticeUiTest 驗證完整寬高、面板開關及返回、短橫向捲動、1.5 倍字體、錄影停止與保存回饋、直向和暖機狀態。
 
 ## Playback
 
@@ -45,4 +49,4 @@ SAVING／SAVED／FAILED 分別呈現；MediaStore 完成後才能顯示已保存
 
 Material 語意按鈕、繁中標籤、48 dp 操作下限、系統安全區、可捲動控制區和非拖曳時間軸替代操作。錄影時間不以 live-region 每秒播報，保存狀態使用 polite live-region。
 
-JVM 測試驗證生命週期、片段時間、跨片段定位和手勢；模擬器測試驗證按鈕、忙碌、保存成功／失敗與直接播放控制。實際 Pixel 長時間錄影、CameraX／編碼器、日照、護具、觀看距離與完整大字／TalkBack 流程仍需裝置驗收。
+JVM 測試驗證生命週期、片段時間、跨片段定位和手勢；模擬器測試驗證按鈕、忙碌、保存成功／失敗與直接播放控制。LiveCameraPreviewTest 另以模擬器前鏡頭確認預設隱藏小窗仍有 ImageAnalysis 畫格，開關小窗保持同一 PreviewView 並持續收到畫格。這項測試不等同延遲編碼與完整實機驗收。實際 Pixel 長時間錄影、CameraX／編碼器、日照、護具、觀看距離與完整大字／TalkBack 流程仍需裝置驗收。

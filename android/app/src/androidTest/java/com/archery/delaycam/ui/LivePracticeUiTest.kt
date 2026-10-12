@@ -4,6 +4,7 @@ import android.content.ContentValues
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.graphics.Bitmap
+import android.net.Uri
 import android.provider.MediaStore
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.background
@@ -16,12 +17,17 @@ import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Density
 import com.archery.delaycam.camera.RecordingPhase
 import com.archery.delaycam.state.SaveStatus
+import com.archery.delaycam.state.SavePhase
 import com.archery.delaycam.ui.components.RecordingControls
+import com.archery.delaycam.ui.components.RecordingScreenLayout
+import com.archery.delaycam.ui.components.SaveStatusNotice
 import com.archery.delaycam.ui.live.DelayWarmupIndicator
 import com.archery.delaycam.ui.live.LivePracticeLayout
 import com.archery.delaycam.ui.live.LiveSaveActions
@@ -48,11 +54,26 @@ class LivePracticeUiTest {
 
     @After fun restorePortrait() { orientation(false) }
 
-    private fun content(compact: Boolean = false) {
+    private fun content(
+        compact: Boolean = false,
+        phase: RecordingPhase = RecordingPhase.IDLE,
+        recordingSave: SaveStatus = SaveStatus(),
+        clipSave: SaveStatus = SaveStatus(),
+        fontScale: Float = 1f,
+        onToggleRecording: () -> Unit = {},
+        onRetryRecording: () -> Unit = {},
+        onOpenSaved: (Uri, String) -> Unit = { _, _ -> },
+        onSaveOnly: () -> Unit = {},
+    ) {
         compose.setContent { DelayCamTheme {
-            Column(Modifier.fillMaxSize().safeDrawingPadding()
+            CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, fontScale)) {
+            Box((if (compact) Modifier.width(560.dp).height(220.dp) else Modifier.fillMaxSize())
                 .background(MaterialTheme.colorScheme.background)) {
-                RecordingControls(RecordingPhase.IDLE, 0, SaveStatus(), {}, {}, { _, _ -> })
+                RecordingScreenLayout(practice = true,
+                    recording = { small, modifier ->
+                        RecordingControls(phase, 18, recordingSave, onToggleRecording, onRetryRecording,
+                            onOpenSaved, compact = small, modifier = modifier)
+                    }, content = { screenModifier ->
                 LivePracticeLayout(
                     header = { Text("延遲設定 10 秒 · 已就緒",
                         Modifier.padding(12.dp).testTag("practice-header")) },
@@ -62,11 +83,18 @@ class LivePracticeUiTest {
                         Text("延遲影片區（版面測試）")
                     } },
                     controls = { sidePanel ->
-                        LiveSaveActions(true, sidePanel, {}, {})
+                        LiveSaveActions(true, sidePanel, {}, onSaveOnly)
                         TextButton(onClick = {}) { Text("操作說明") }
                     },
-                    modifier = if (compact) Modifier.width(560.dp).height(220.dp) else Modifier.weight(1f),
+                    landscapeFeedback = { modifier ->
+                        if (clipSave.phase != SavePhase.IDLE) Surface(modifier) {
+                            SaveStatusNotice(clipSave, {}, onOpenSaved)
+                        }
+                    },
+                    modifier = screenModifier,
                 )
+                })
+            }
             }
         } }
     }
@@ -74,12 +102,11 @@ class LivePracticeUiTest {
     private fun checkWideVideo() {
         val layout = compose.onNodeWithTag("practice-layout").fetchSemanticsNode().boundsInRoot
         val video = compose.onNodeWithTag("practice-video").fetchSemanticsNode().boundsInRoot
-        val controls = compose.onNodeWithTag("practice-controls").fetchSemanticsNode().boundsInRoot
+        val screen = compose.onNodeWithTag("recording-screen-layout").fetchSemanticsNode().boundsInRoot
         assertTrue("Wide video must keep the available height", abs(layout.height - video.height) <= 2f)
-        assertTrue("Video must keep most of the width", video.width >= layout.width * 0.60f)
-        assertTrue("Controls belong beside the video", controls.left >= video.right - 2f)
-        compose.onNodeWithText("存檔並回看").assertIsDisplayed().assertIsEnabled()
-        compose.onNodeWithText("只保存").assertIsDisplayed().assertIsEnabled()
+        assertTrue("Video must keep all available width", abs(layout.width - video.width) <= 2f)
+        assertTrue("Recording chrome must not reserve video height", abs(screen.height - video.height) <= 2f)
+        compose.onNodeWithTag("practice-control-toggle").assertIsDisplayed().assertIsEnabled()
     }
 
     private fun screenshot(name: String) {
@@ -101,18 +128,96 @@ class LivePracticeUiTest {
         resolver.update(uri, values, null, null)
     }
 
-    @Test fun landscapeUsesVideoHeightInsteadOfStackingActions() {
+    @Test fun landscapeVideoFillsScreenWithRecordingStopAlwaysAvailable() {
         orientation(true)
-        content()
+        var stopped = false
+        content(phase = RecordingPhase.RECORDING, onToggleRecording = { stopped = true })
         checkWideVideo()
-        screenshot("live-landscape")
+        compose.onNodeWithTag("practice-controls").assertDoesNotExist()
+        compose.onNodeWithText("停止錄影").assertIsDisplayed().assertIsEnabled().performClick()
+        compose.runOnIdle { assertTrue(stopped) }
+        screenshot("live-landscape-fullscreen")
     }
 
-    @Test fun compactLandscapeAlsoKeepsActionsBesideVideo() {
+    @Test fun openingAndClosingControlsNeverResizesVideoOrSaves() {
+        orientation(true)
+        var saves = 0
+        content(onSaveOnly = { saves++ })
+        val before = compose.onNodeWithTag("practice-video").fetchSemanticsNode().boundsInRoot
+        compose.onNodeWithContentDescription("顯示操作").performClick()
+        checkWideVideo()
+        assertTrue(before == compose.onNodeWithTag("practice-video").fetchSemanticsNode().boundsInRoot)
+        compose.onNodeWithText("存檔並回看").performScrollTo().assertIsDisplayed().assertIsEnabled()
+        compose.onNodeWithText("只保存").performScrollTo().assertIsDisplayed().performClick()
+        compose.runOnIdle { assertTrue(saves == 1) }
+        screenshot("live-landscape-controls")
+        compose.onNodeWithContentDescription("收起操作").performClick()
+        compose.onNodeWithTag("practice-controls").assertDoesNotExist()
+        checkWideVideo()
+        compose.runOnIdle { assertTrue(saves == 1) }
+    }
+
+    @Test fun compactLandscapeControlsScrollAndBackClosesPanel() {
         orientation(true)
         content(compact = true)
         checkWideVideo()
-        screenshot("live-compact-landscape")
+        screenshot("live-compact-landscape-fullscreen")
+        compose.onNodeWithContentDescription("顯示操作").performClick()
+        compose.onNodeWithText("只保存").performScrollTo().assertIsDisplayed().assertIsEnabled()
+        compose.onNodeWithText("操作說明").performScrollTo().assertIsDisplayed()
+        screenshot("live-compact-landscape-controls")
+        compose.activityRule.scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }
+        compose.onNodeWithTag("practice-controls").assertDoesNotExist()
+        checkWideVideo()
+    }
+
+    @Test fun landscapeSaveFailureRemainsVisibleWithControlsCollapsed() {
+        orientation(true)
+        var retries = 0
+        content(recordingSave = SaveStatus(phase = SavePhase.FAILED, message = "整段影片保存失敗", retryable = true),
+            clipSave = SaveStatus(phase = SavePhase.SAVED, message = "單箭影片已保存",
+                uri = Uri.parse("content://media/external/video/media/123")),
+            onRetryRecording = { retries++ })
+        compose.onNodeWithTag("practice-controls").assertDoesNotExist()
+        compose.onNodeWithText("整段影片保存失敗").assertIsDisplayed()
+        compose.onNodeWithText("重試保存").assertIsDisplayed().performClick()
+        compose.onNodeWithText("單箭影片已保存").assertIsDisplayed()
+        compose.onNodeWithText("查看影片").assertIsDisplayed()
+        compose.runOnIdle { assertTrue(retries == 1) }
+        checkWideVideo()
+        screenshot("live-landscape-save-feedback")
+    }
+
+    @Test fun compactRecordingBusyDisablesDuplicateRequests() {
+        orientation(true)
+        content(phase = RecordingPhase.STOPPING)
+        compose.onNodeWithText("正在完成錄影…").assertIsDisplayed()
+        compose.onNodeWithText("處理中…").assertIsNotEnabled()
+        checkWideVideo()
+    }
+
+    @Test fun landscapeSavedRecordingOffersViewAndContinue() {
+        orientation(true)
+        var opened = false
+        content(recordingSave = SaveStatus(phase = SavePhase.SAVED, message = "整段影片已保存",
+            uri = Uri.parse("content://media/external/video/media/456")),
+            onOpenSaved = { _, _ -> opened = true })
+        compose.onNodeWithText("整段影片已保存").assertIsDisplayed()
+        compose.onNodeWithText("繼續錄影").assertIsDisplayed().assertIsEnabled()
+        compose.onNodeWithText("查看").assertIsDisplayed().performClick()
+        compose.runOnIdle { assertTrue(opened) }
+        screenshot("live-landscape-recording-saved")
+    }
+
+    @Test fun largeTextKeepsStopAndScrollableSaveActionsReachable() {
+        orientation(true)
+        content(compact = true, phase = RecordingPhase.RECORDING, fontScale = 1.5f)
+        compose.onNodeWithText("停止錄影").assertIsDisplayed().assertIsEnabled()
+        compose.onNodeWithContentDescription("顯示操作").performClick()
+        compose.onNodeWithText("只保存").performScrollTo().assertIsDisplayed().assertIsEnabled()
+        compose.onNodeWithText("操作說明").performScrollTo().assertIsDisplayed()
+        checkWideVideo()
+        screenshot("live-landscape-large-text")
     }
 
     @Test fun portraitKeepsActionsBelowVideo() {

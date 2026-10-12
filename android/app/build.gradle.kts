@@ -17,8 +17,8 @@ android {
         minSdk = 29
         targetSdk = 34
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        versionCode = 4
-        versionName = "0.2.1"
+        versionCode = 5
+        versionName = "0.2.2"
     }
 
     // CI pins a cached debug key so later test builds can update this package.

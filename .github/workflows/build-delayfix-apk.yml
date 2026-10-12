@@ -112,6 +112,8 @@ jobs:
           arch: x86_64
           profile: pixel_6
           disable-animations: true
+          # CameraX smoke test requires an actual emulator camera Surface.
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none -camera-front emulated
           script: |
             chmod +x gradlew
             ./gradlew :app:connectedDebugAndroidTest --no-daemon --stacktrace
