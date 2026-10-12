@@ -4,6 +4,12 @@
 
 最新第 1 版優先支援 [回放手勢控制](replay-gesture-control-proposal.md)：返回、重播、加快／放慢；LIVE 五指維持現行保存並回看，REPLAY 五指映射為重播，不能只解除保存鎖。返回緩衝改善先做原型，保留已有黑屏／生命週期復原規則。
 
+0.2.3 已落地 GestureCommandGate、PlaybackSessionController、ReplayReturnPolicy 與導航外 PracticeCameraLayout，見 [實作紀錄](replay-gestures-implementation.md)；其餘資料庫／網路／來源保護模組仍是後續設計。下一步集中驗證同 session 的有效來源緩衝恢復，片段缺失與來源改變走既有完整 reset。
+
+多裝置依最新要求一起考量 Android、iPhone／iPad 與電腦：傳輸、角色、指令去重與來源時間為共用協定，觀看端評估瀏覽器與 Android 原生適配，先通過三平台媒體相容性原型再定正式方案。詳細工作包與驗收在 [跨平台下一步](cross-platform-viewer-next-steps.md)；本文件原先 Android 對 Android 的限定原型仍可作局部測試，不能代表已完成跨平台。
+
+首輪連線原型同時納入 KnownPeerRegistry 與重新發現：永久 peerId／身分指紋、配對授權和最後端點分開保存；新端點重新驗證身分，IP 不當 ID。原生 NSD／mDNS 與瀏覽器固定入口／來源儲存各驗證，提供 QR 備援、授權撤銷與過期配對處理。重連核對目前來源 epoch、錄影與控制者，不重新執行上次指令。
+
 ## 1. 現況與需要補足的能力
 
 | 現況證據 | 對新增功能的影響 | 處理安排 |
