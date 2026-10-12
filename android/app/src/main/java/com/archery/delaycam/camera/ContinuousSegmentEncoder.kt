@@ -103,6 +103,7 @@ class ContinuousSegmentEncoder(
     private val onSegmentFinalized: (SegmentInfo) -> Unit,
     private val onStopped: () -> Unit = {},
     private val filePrefix: String = "rollbuf",
+    private val immutableStore: ImmutableSegmentStore? = null,
 ) {
     @Volatile private var ringSize: Int = 10
     @Volatile private var running = false
@@ -120,9 +121,14 @@ class ContinuousSegmentEncoder(
     private var segmentIndex = 0
     private var segmentStartedAtMs = 0L
     private var nextCutAtMs = 0L
+    private var firstSampleUs = 0L
+    private var lastSampleUs = 0L
+    private var frameDurationUs = 33_333L
+    private var hasSample = false
 
     fun setRingSize(size: Int) {
         ringSize = size.coerceAtLeast(2)
+        immutableStore?.setKeepCount(ringSize)
     }
 
     /**
@@ -266,12 +272,21 @@ class ContinuousSegmentEncoder(
                         buffer.position(bufferInfo.offset)
                         buffer.limit(bufferInfo.offset + bufferInfo.size)
                         m.writeSampleData(muxerTrackIndex, buffer, bufferInfo)
+                        if (!hasSample) {
+                            firstSampleUs = bufferInfo.presentationTimeUs
+                            hasSample = true
+                        } else {
+                            val delta = bufferInfo.presentationTimeUs - lastSampleUs
+                            if (delta in 1_000L..1_000_000L) frameDurationUs = delta
+                        }
+                        lastSampleUs = bufferInfo.presentationTimeUs
                     }
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "segment write/cut failed, dropping current segment and continuing", e)
                 muxer?.let { m -> try { m.release() } catch (_: Exception) {} }
                 muxer = null
+                immutableStore?.discard(currentSegmentFile)
                 currentSegmentFile = null
             } finally {
                 try {
@@ -295,7 +310,7 @@ class ContinuousSegmentEncoder(
     }
 
     private fun startNewSegment(c: MediaCodec, startedAtMs: Long) {
-        val file = segmentFile(segmentIndex)
+        val file = immutableStore?.allocate() ?: segmentFile(segmentIndex)
         segmentIndex = (segmentIndex + 1) % ringSize
         // Timed alongside finalizeCurrentSegment()'s stop()/release() timing
         // below: log-timestamp analysis of a real test run found ~650ms of
@@ -305,7 +320,12 @@ class ContinuousSegmentEncoder(
         // MediaMuxer calls (constructor, addTrack, start) or the stop/
         // release pair in finalizeCurrentSegment(); this narrows down which.
         val ctorStartNs = System.nanoTime()
-        val newMuxer = MediaMuxer(file.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+        val newMuxer = try {
+            MediaMuxer(file.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+        } catch (e: Exception) {
+            immutableStore?.discard(file)
+            throw e
+        }
         val ctorMs = (System.nanoTime() - ctorStartNs) / 1_000_000
         // No orientation hint needed: the Bitmap onFrame() draws is already
         // upright (see class doc), unlike the two earlier attempts which
@@ -323,12 +343,15 @@ class ContinuousSegmentEncoder(
             // native resources - it never got assigned to the `muxer`
             // field, so nothing else would ever release it.
             try { newMuxer.release() } catch (_: Exception) {}
+            immutableStore?.discard(file)
             throw e
         }
         muxer = newMuxer
         currentSegmentFile = file
         segmentStartedAtMs = startedAtMs
         nextCutAtMs = startedAtMs + SEGMENT_TARGET_MS
+        hasSample = false
+        frameDurationUs = 33_333L
     }
 
     private fun finalizeCurrentSegment(endedAtMs: Long) {
@@ -353,6 +376,7 @@ class ContinuousSegmentEncoder(
             // long session, but never got cleaned up).
             Log.w(TAG, "muxer.stop() failed for $file after ${(System.nanoTime() - stopStartNs) / 1_000_000}ms, dropping this segment", e)
             try { m.release() } catch (_: Exception) {}
+            immutableStore?.discard(file)
             return
         }
         val stopMs = (System.nanoTime() - stopStartNs) / 1_000_000
@@ -362,7 +386,9 @@ class ContinuousSegmentEncoder(
         if (stopMs > 100 || releaseMs > 100) {
             Log.w(TAG, "slow muxer teardown for ${file.name}: stop=${stopMs}ms release=${releaseMs}ms")
         }
-        val info = SegmentInfo(file, segmentStartedAtMs, endedAtMs)
+        val durationMs = if (hasSample) (lastSampleUs - firstSampleUs + frameDurationUs) / 1000 else 0L
+        val info = SegmentInfo(file, segmentStartedAtMs, endedAtMs, durationMs)
+        immutableStore?.publish(file)
         // Diagnostic for the still-remaining periodic stalls (~1 in 7
         // segments, no clear signal on which one or why): logging every
         // segment's actual duration and file size. A degenerate segment

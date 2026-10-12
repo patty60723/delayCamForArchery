@@ -4,6 +4,8 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+val fastResumeTrial = providers.gradleProperty("fastResumeTrial").orNull == "true"
+
 android {
     namespace = "com.archery.delaycam"
     compileSdk = 34
@@ -17,8 +19,10 @@ android {
         minSdk = 29
         targetSdk = 34
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        versionCode = 6
-        versionName = "0.2.3"
+        versionCode = 7
+        versionName = "0.2.4"
+        buildConfigField("boolean", "FAST_RESUME_TRIAL", fastResumeTrial.toString())
+        manifestPlaceholders["appLabel"] = if (fastResumeTrial) "射箭 Delay 快速返回測試" else "@string/app_name"
     }
 
     // CI pins a cached debug key so later test builds can update this package.
@@ -29,8 +33,8 @@ android {
 
     buildTypes {
         debug {
-            applicationIdSuffix = ".delayfix3"
-            versionNameSuffix = "-recording-ux"
+            applicationIdSuffix = if (fastResumeTrial) ".fastresume" else ".delayfix3"
+            versionNameSuffix = if (fastResumeTrial) "-fast-return-test" else "-recording-ux"
         }
         release {
             isMinifyEnabled = false
@@ -49,6 +53,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     packaging {

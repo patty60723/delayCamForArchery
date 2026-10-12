@@ -1,4 +1,4 @@
-name: Build and verify recording UX APK
+name: Build and verify fast return comparison APK
 
 on:
   push:
@@ -8,6 +8,9 @@ on:
     paths-ignore:
       - "docs/**"
   workflow_dispatch:
+
+env:
+  ORG_GRADLE_PROJECT_fastResumeTrial: "true"
 
 permissions:
   contents: read
@@ -73,7 +76,7 @@ jobs:
           sha256sum app/build/outputs/apk/debug/app-debug.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: delaycam-recording-ux-v3-apk
+          name: delaycam-fast-return-comparison-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14

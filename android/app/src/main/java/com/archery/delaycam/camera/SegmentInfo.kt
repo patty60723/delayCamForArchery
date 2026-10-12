@@ -13,4 +13,6 @@ data class SegmentInfo(
     val file: File,
     val startedAtMs: Long,
     val endedAtMs: Long,
+    val mediaDurationMs: Long = endedAtMs - startedAtMs,
 )
+

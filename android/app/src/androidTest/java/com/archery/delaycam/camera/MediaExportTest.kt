@@ -111,4 +111,44 @@ class MediaExportTest {
             assertEquals(0, it!!.count)
         }
     }
+
+    @Test fun realEncoderPublishesImmutablePlayableSegmentsWithUsableSourceTiming() {
+        val store = ImmutableSegmentStore(context.cacheDir, "encoder_test_${UUID.randomUUID()}")
+        val segments = java.util.Collections.synchronizedList(mutableListOf<SegmentInfo>())
+        val leases = java.util.Collections.synchronizedList(mutableListOf<ImmutableSegmentStore.Lease>())
+        val stopped = java.util.concurrent.CountDownLatch(1)
+        val encoder = ContinuousSegmentEncoder(context.cacheDir, { segment ->
+            store.acquire(listOf(segment))?.let { leases.add(it); segments.add(segment) }
+        }, { stopped.countDown() }, immutableStore = store)
+        val bitmap = android.graphics.Bitmap.createBitmap(320, 240, android.graphics.Bitmap.Config.ARGB_8888)
+        encoder.setRingSize(2)
+        try {
+            val deadline = android.os.SystemClock.elapsedRealtime() + 7_000
+            while (android.os.SystemClock.elapsedRealtime() < deadline) {
+                bitmap.eraseColor(android.graphics.Color.GREEN)
+                encoder.onFrame(bitmap)
+                android.os.SystemClock.sleep(50)
+            }
+            encoder.stop()
+            assertTrue(stopped.await(10, java.util.concurrent.TimeUnit.SECONDS))
+            val completed = segments.toList()
+            assertTrue("Need multiple keyframe-bounded files", completed.size >= 3)
+            assertEquals(completed.size, completed.map { it.file }.distinct().size)
+            assertTrue("Source/media timing must support fast seek", completed.dropLast(1).any { FastResumePlan.valid(it) })
+            completed.forEach { segment ->
+                val retriever = MediaMetadataRetriever()
+                try {
+                    retriever.setDataSource(segment.file.absolutePath)
+                    val frame = retriever.getFrameAtTime(0)
+                    assertNotNull(frame)
+                    frame?.recycle()
+                } finally { retriever.release() }
+            }
+        } finally {
+            encoder.stop()
+            bitmap.recycle()
+            leases.forEach { it.close() }
+            store.close()
+        }
+    }
 }
