@@ -22,6 +22,10 @@ import com.archery.delaycam.camera.SegmentInfo
 import com.archery.delaycam.gallery.ClipEntry
 import com.archery.delaycam.gallery.GalleryRepository
 import com.archery.delaycam.gesture.GestureEngine
+import com.archery.delaycam.gesture.GestureAction
+import com.archery.delaycam.gesture.GestureScene
+import com.archery.delaycam.ui.playback.PlaybackSessionController
+import com.archery.delaycam.ui.playback.ReplayReturnPolicy
 import com.archery.delaycam.settings.AppSettings
 import com.archery.delaycam.settings.SettingsRepository
 import com.archery.delaycam.state.AppState
@@ -109,7 +113,9 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
     private var clipSaveJob: Job? = null
     private var replaySnapshot: ClipSnapshot? = null
     private var failedClipSnapshot: ClipSnapshot? = null
-    private var replayAutoReturn = true
+    private val replayReturnPolicy = ReplayReturnPolicy()
+    private val _replayReturnRemainingSec = MutableStateFlow<Int?>(null)
+    val replayReturnRemainingSec: StateFlow<Int?> = _replayReturnRemainingSec.asStateFlow()
     private var closingCaptureSessionId: Long? = null
     private var practiceVisible = false
 
@@ -140,9 +146,44 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
 
     val gestureEngine = GestureEngine(
         application,
-        onGesture = { triggerSave() },
-        onToggleRecord = ::toggleContinuousRecording,
+        onAction = ::handleGestureAction,
     )
+
+    val replayPlayback = PlaybackSessionController(
+        replayPlayer, ::markReplayInteraction,
+        onSpeedChange = { rate -> updateSettings { it.copy(slowMoRate = rate) } },
+        onFeedback = { _toast.value = it },
+    )
+
+    private fun syncGestureScene() {
+        gestureEngine.setScene(when {
+            !practiceVisible || !captureSession.isForeground() -> GestureScene.DISABLED
+            _appState.value == AppState.REPLAY -> GestureScene.REPLAY
+            _appState.value == AppState.SAVING -> GestureScene.SAVING
+            else -> GestureScene.LIVE
+        })
+    }
+
+    private fun handleGestureAction(action: GestureAction, scene: GestureScene) {
+        if (!practiceVisible || !captureSession.isForeground()) return
+        val current = when (_appState.value) {
+            AppState.LIVE -> GestureScene.LIVE
+            AppState.SAVING -> GestureScene.SAVING
+            AppState.REPLAY -> GestureScene.REPLAY
+        }
+        if (scene != current) return
+        when (action) {
+            GestureAction.SAVE_CLIP -> if (current == GestureScene.LIVE) triggerSave()
+            GestureAction.TOGGLE_RECORD -> toggleContinuousRecording()
+            GestureAction.RETURN_TO_PRACTICE -> if (current == GestureScene.REPLAY) {
+                _toast.value = "返回練習"
+                skipReplay()
+            }
+            GestureAction.REPLAY_CLIP -> if (current == GestureScene.REPLAY) replayPlayback.restart()
+            GestureAction.FASTER -> if (current == GestureScene.REPLAY) replayPlayback.changeSpeed(true)
+            GestureAction.SLOWER -> if (current == GestureScene.REPLAY) replayPlayback.changeSpeed(false)
+        }
+    }
 
     /**
      * Persistent Preview use case for the PiP window. Lives here (not in
@@ -165,6 +206,8 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
         }
         viewModelScope.launch { refreshGallery() }
         viewModelScope.launch { warmupTicker() }
+        viewModelScope.launch { replayReturnTicker() }
+        viewModelScope.launch { _appState.collect { syncGestureScene() } }
         viewModelScope.launch { recordingElapsedTicker() }
         viewModelScope.launch { livePlayerStallWatchdog() }
         viewModelScope.launch { runRecordingCommands() }
@@ -182,7 +225,9 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
 
         replayPlayer.addListener(object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
-                if (playbackState == Player.STATE_ENDED && replayAutoReturn) onReplayFinished()
+                if (playbackState == Player.STATE_ENDED && _appState.value == AppState.REPLAY) {
+                    replayReturnPolicy.ended(SystemClock.elapsedRealtime())
+                }
             }
         })
 
@@ -212,7 +257,7 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
     fun onAppForegrounded() {
         val sessionId = captureSession.beginForeground() ?: return
         resetDelayedPlayback()
-        gestureEngine.interactionEnabled = practiceVisible
+        syncGestureScene()
         _warmupRemainingSec.value = settings.value.delaySec
         Log.d(TAG, "app foreground: capture session=$sessionId, warming fresh delay buffer")
         cameraAnalysisExecutor.execute {
@@ -255,7 +300,9 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
     fun onAppBackgrounded() {
         val endingSessionId = captureSession.sessionForFrame()
         if (!captureSession.endForeground()) return
-        gestureEngine.interactionEnabled = false
+        gestureEngine.setScene(GestureScene.DISABLED)
+        replayReturnPolicy.suspend()
+        _replayReturnRemainingSec.value = null
         if (recordingLifecycle.phase == RecordingPhase.STARTING ||
             recordingLifecycle.phase == RecordingPhase.RECORDING) {
             recordingStoppedInBackground = true
@@ -406,6 +453,18 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
                 }
             }
             delay(300)
+        }
+    }
+
+    private suspend fun replayReturnTicker() {
+        while (viewModelScope.isActive) {
+            if (_appState.value == AppState.REPLAY && captureSession.isForeground()) {
+                val now = SystemClock.elapsedRealtime()
+                if (replayPlayer.playbackState == Player.STATE_ENDED) replayReturnPolicy.ended(now)
+                _replayReturnRemainingSec.value = replayReturnPolicy.remainingSeconds(now)
+                if (replayReturnPolicy.shouldReturn(now)) onReplayFinished()
+            } else _replayReturnRemainingSec.value = null
+            delay(100)
         }
     }
 
@@ -567,12 +626,15 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
 
     fun setPracticeVisible(visible: Boolean) {
         practiceVisible = visible
-        gestureEngine.interactionEnabled = visible && captureSession.isForeground()
+        syncGestureScene()
     }
 
     fun setMirrorVideo(mirrored: Boolean) { _mirrorVideo.value = mirrored }
 
-    fun markReplayInteraction() { replayAutoReturn = false }
+    fun markReplayInteraction() {
+        replayReturnPolicy.interact()
+        _replayReturnRemainingSec.value = null
+    }
 
     /**
      * Manual button and gesture trigger share this one path (spec 3.1).
@@ -606,7 +668,7 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
             return
         }
         if (playAfterSave) _appState.value = AppState.SAVING
-        gestureEngine.locked = true
+        syncGestureScene()
         val displayName = clipDisplayName()
         _clipSave.value = SaveStatus(SavePhase.SAVING, displayName = displayName, message = "單箭儲存中…")
         clipSaveJob = viewModelScope.launch {
@@ -616,7 +678,7 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
                 snapshot = copied
                 if (playAfterSave && captureSession.isForeground() && _appState.value == AppState.SAVING) {
                     replaySnapshot = copied
-                    replayAutoReturn = true
+                    replayReturnPolicy.begin()
                     replayPlayer.stop()
                     replayPlayer.clearMediaItems()
                     copied.segments.forEach { replayPlayer.addMediaItem(MediaItem.fromUri(it.file.toUri())) }
@@ -637,7 +699,7 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
                     else "單箭未能保存，請確認空間後再存檔", retryable = snapshot != null)
                 if (_appState.value == AppState.SAVING) _appState.value = AppState.LIVE
             } finally {
-                gestureEngine.locked = _appState.value == AppState.REPLAY
+                syncGestureScene()
                 val unused = snapshot
                 if (unused != null && unused !== replaySnapshot && unused !== failedClipSnapshot) {
                     withContext(Dispatchers.IO) { unused.delete() }
@@ -689,8 +751,10 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
         // The backlog scheduled during the replay covers a window the archer
         // already watched - drop it and re-warm-up rather than dumping it in.
         resetDelayedPlayback()
-        gestureEngine.locked = false
+        replayReturnPolicy.suspend()
+        _replayReturnRemainingSec.value = null
         _appState.value = AppState.LIVE
+        syncGestureScene()
     }
 
     suspend fun refreshGallery() {

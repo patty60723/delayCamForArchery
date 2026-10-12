@@ -67,6 +67,10 @@ Theme.kt 同時設定全域 LocalContentColor 為 onBackground，讓直接位於
 
 ## Components
 
+0.2.3 回放新增手勢返回、變速與重播；映射與放手規則見 UX-CONTRACT.md。回放的速度選擇與手動重播共用 PlaybackSessionController；播放器事件立即同步速度選取狀態。回放手勢教學收進「手勢說明」，只在第一次未操作的回放結束顯示兩秒返回文字；不新增常駐教學面板。原有黑底、橙色、FIT 與橫向滿版練習配置維持。
+
+PracticeCameraLayout 在導航之外保留唯一 PreviewView；LiveScreen 回報即時小窗的位置，host 在該位置顯示相機，在回放或收起小窗時保持透明連接，不重新綁定鏡頭。
+
 `RecordingScreenLayout` 擁有頂部列／浮動錄影的空間配置，導航內容只有一個 composition 位置。`LivePracticeLayout`、`LiveSaveActions` 與 `DelayWarmupIndicator` 擁有練習頁的橫直配置、非模態操作面板、保存按鈕和暖機倒數。`LiveCameraPreview` 保持同一 PreviewView 與相機 Surface 連接，收起僅隐藏顯示並移除輔助功能語意，不中斷相機。`RecordingControls` 是錄影操作與結果的共用元件，其 compact 版本共用狀態與切換規則；`SaveStatusNotice` 是單箭保存結果；`VideoPlayer` 與 `PlaybackControls` 是兩種回看共用的影片與控制層。狀態行為見 [UX-CONTRACT.md](UX-CONTRACT.md)。
 
 所有主要操作有文字。忙碌時禁用重複操作；成功由使用者點查看，不自動帶離練習；失敗持續顯示，能重試時才提供重試。鏡像只作用於影片層。

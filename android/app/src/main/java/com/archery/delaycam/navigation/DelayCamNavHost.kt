@@ -30,6 +30,8 @@ import com.archery.delaycam.ui.DelayCamViewModel
 import com.archery.delaycam.ui.gallery.GalleryScreen
 import com.archery.delaycam.ui.gallery.PlayerScreen
 import com.archery.delaycam.ui.live.LiveScreen
+import com.archery.delaycam.ui.live.PracticeCameraLayout
+import androidx.compose.ui.geometry.Rect
 import com.archery.delaycam.ui.replay.ReplayScreen
 import com.archery.delaycam.ui.settings.SettingsScreen
 import java.net.URLDecoder
@@ -90,6 +92,7 @@ fun DelayCamNavHost(viewModel: DelayCamViewModel) {
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
+        PracticeCameraLayout(viewModel.previewUseCase, live = route == Routes.LIVE) { previewBounds ->
         RecordingScreenLayout(
             practice = route == Routes.LIVE,
             recording = { compact, modifier ->
@@ -97,8 +100,9 @@ fun DelayCamNavHost(viewModel: DelayCamViewModel) {
                     viewModel::toggleContinuousRecording, viewModel::retryRecordingSave, openSaved,
                     compact = compact, modifier = modifier)
             },
-            content = { modifier -> AppNavHost(navController, viewModel, modifier, openSaved) },
+            content = { modifier -> AppNavHost(navController, viewModel, modifier, openSaved, previewBounds) },
         )
+        }
 
         toast?.let {
             Surface(
@@ -120,6 +124,7 @@ private fun AppNavHost(
     viewModel: DelayCamViewModel,
     modifier: Modifier,
     onOpenSaved: (android.net.Uri, String) -> Unit,
+    onPreviewBounds: (Rect?) -> Unit,
 ) {
     NavHost(navController = navController, startDestination = Routes.LIVE, modifier = modifier) {
         composable(Routes.LIVE) {
@@ -128,6 +133,7 @@ private fun AppNavHost(
                 onOpenSettings = { navController.navigate(Routes.SETTINGS) },
                 onOpenGallery = { navController.navigate(Routes.GALLERY) },
                 onOpenSavedClip = onOpenSaved,
+                onPreviewBounds = onPreviewBounds,
             )
         }
         composable(Routes.REPLAY) {

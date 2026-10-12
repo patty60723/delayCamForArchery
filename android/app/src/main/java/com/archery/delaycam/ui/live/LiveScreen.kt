@@ -8,6 +8,9 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.dp
 import com.archery.delaycam.settings.DominantHand
 import com.archery.delaycam.state.AppState
@@ -22,6 +25,7 @@ fun LiveScreen(
     onOpenSettings: () -> Unit,
     onOpenGallery: () -> Unit,
     onOpenSavedClip: (Uri, String) -> Unit,
+    onPreviewBounds: (Rect?) -> Unit,
 ) {
     val settings by viewModel.settings.collectAsState()
     val warmup by viewModel.warmupRemainingSec.collectAsState()
@@ -31,6 +35,7 @@ fun LiveScreen(
     var portraitPreview by rememberSaveable { mutableStateOf(true) }
     var landscapePreview by rememberSaveable { mutableStateOf(false) }
     var showHelp by remember { mutableStateOf(false) }
+    DisposableEffect(onPreviewBounds) { onDispose { onPreviewBounds(null) } }
     val canSave = state == AppState.LIVE && warmup == null &&
         save.phase != SavePhase.SAVING && !(save.phase == SavePhase.FAILED && save.retryable)
 
@@ -68,8 +73,14 @@ fun LiveScreen(
             val previewAlignment = if (landscape) Alignment.BottomEnd
                 else if (settings.dominantHand == DominantHand.LEFT) Alignment.TopEnd
                 else Alignment.TopStart
-            LiveCameraPreview(viewModel.previewUseCase, showPreview, previewWidth,
-                Modifier.align(previewAlignment).padding(8.dp))
+            if (showPreview) Column(Modifier.align(previewAlignment).padding(8.dp)
+                .width(previewWidth).background(MaterialTheme.colorScheme.surface)) {
+                Text("即時", Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    style = MaterialTheme.typography.labelMedium)
+                Box(Modifier.fillMaxWidth().aspectRatio(3f / 4f)
+                    .onGloballyPositioned { onPreviewBounds(it.boundsInRoot()) })
+            }
+            LaunchedEffect(showPreview) { if (!showPreview) onPreviewBounds(null) }
         } },
         controls = { sidePanel ->
             val showPreview = if (sidePanel) landscapePreview else portraitPreview

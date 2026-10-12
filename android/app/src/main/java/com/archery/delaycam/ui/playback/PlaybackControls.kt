@@ -22,7 +22,14 @@ fun PlaybackControls(
     onMirrorChange: (Boolean) -> Unit,
     onSpeedChange: (Float) -> Unit,
     onUserInteraction: () -> Unit = {},
+    controller: PlaybackSessionController? = null,
 ) {
+    val interaction by rememberUpdatedState(onUserInteraction)
+    val speedChange by rememberUpdatedState(onSpeedChange)
+    val localController = remember(player) {
+        PlaybackSessionController(player, { interaction() }, { speedChange(it) })
+    }
+    val playback = controller ?: localController
     var durations by remember(player) { mutableStateOf(emptyList<Long>()) }
     var position by remember(player) { mutableLongStateOf(0) }
     var playing by remember(player) { mutableStateOf(player.playWhenReady) }
@@ -31,6 +38,9 @@ fun PlaybackControls(
     var error by remember(player) { mutableStateOf(false) }
     DisposableEffect(player) {
         val listener = object : Player.Listener {
+            override fun onPlaybackParametersChanged(playbackParameters: PlaybackParameters) {
+                speed = playbackParameters.speed
+            }
             override fun onPlayerError(playerError: PlaybackException) { error = true }
             override fun onPlaybackStateChanged(state: Int) {
                 if (state == Player.STATE_READY) error = false
@@ -96,15 +106,15 @@ fun PlaybackControls(
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf(0.25f, 0.5f, 1f).forEach { rate ->
                 FilterChip(selected = speed == rate, onClick = {
-                    onUserInteraction()
-                    player.playbackParameters = PlaybackParameters(rate)
-                    speed = rate
-                    onSpeedChange(rate)
+                    playback.selectSpeed(rate)
+                    speed = player.playbackParameters.speed
                 }, label = { Text(if (rate == 1f) "1×" else "$rate×") },
                     modifier = Modifier.weight(1f).heightIn(min = 48.dp))
             }
         }
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            TextButton(onClick = { playback.restart() }, enabled = player.mediaItemCount > 0,
+                modifier = Modifier.heightIn(min = 48.dp)) { Text("重播") }
             Text("鏡像觀看", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
             Switch(checked = mirrored, onCheckedChange = {
                 onUserInteraction(); onMirrorChange(it)

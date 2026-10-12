@@ -23,12 +23,13 @@ fun LiveCameraPreview(
     visible: Boolean,
     width: Dp,
     modifier: Modifier = Modifier,
+    showLabel: Boolean = true,
 ) {
     Column(modifier.width(if (visible) width else 1.dp)
         .graphicsLayer { alpha = if (visible) 1f else 0f }
         .then(if (visible) Modifier else Modifier.clearAndSetSemantics {})
         .background(MaterialTheme.colorScheme.surface)) {
-        if (visible) Text("即時", Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+        if (visible && showLabel) Text("即時", Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
             style = MaterialTheme.typography.labelMedium)
         AndroidView(factory = { context -> PreviewView(context).apply {
             tag = "live-camera-preview-host"
