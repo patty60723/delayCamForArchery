@@ -6,6 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
@@ -31,7 +32,8 @@ fun LiveScreen(
     val state by viewModel.appState.collectAsState()
     val save by viewModel.clipSave.collectAsState()
     val mirrored by viewModel.mirrorVideo.collectAsState()
-    var showPreview by remember { mutableStateOf(true) }
+    var portraitPreview by rememberSaveable { mutableStateOf(true) }
+    var landscapePreview by rememberSaveable { mutableStateOf(false) }
     var showHelp by remember { mutableStateOf(false) }
     val canSave = state == AppState.LIVE && warmup == null &&
         save.phase != SavePhase.SAVING && !(save.phase == SavePhase.FAILED && save.retryable)
@@ -55,7 +57,7 @@ fun LiveScreen(
                     TextButton(onClick = onOpenSettings) { Text("設定") }
                 }
             }
-            SaveStatusNotice(save, viewModel::retryClipSave, onOpenSavedClip)
+            if (!sidePanel) SaveStatusNotice(save, viewModel::retryClipSave, onOpenSavedClip)
         },
         video = { videoModifier -> BoxWithConstraints(videoModifier) {
             VideoPlayer(viewModel.livePlayer, mirrored, Modifier.fillMaxSize())
@@ -63,11 +65,14 @@ fun LiveScreen(
             warmup?.let { remaining ->
                 DelayWarmupIndicator(remaining, settings.delaySec, Modifier.align(Alignment.Center))
             }
-            if (showPreview) {
-                val previewWidth = if (maxWidth > maxHeight) (maxHeight * 0.24f).coerceIn(64.dp, 96.dp)
+            val landscape = maxWidth > maxHeight
+            if (if (landscape) landscapePreview else portraitPreview) {
+                val previewWidth = if (landscape) (maxHeight * 0.24f).coerceIn(64.dp, 96.dp)
                     else 96.dp
-                Column(Modifier.align(if (settings.dominantHand == DominantHand.LEFT)
-                    Alignment.TopEnd else Alignment.TopStart).padding(8.dp).width(previewWidth)
+                val previewAlignment = if (landscape) Alignment.BottomEnd
+                    else if (settings.dominantHand == DominantHand.LEFT) Alignment.TopEnd
+                    else Alignment.TopStart
+                Column(Modifier.align(previewAlignment).padding(8.dp).width(previewWidth)
                     .background(MaterialTheme.colorScheme.surface)) {
                     Text("即時", Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                         style = MaterialTheme.typography.labelMedium)
@@ -81,16 +86,27 @@ fun LiveScreen(
             }
         } },
         controls = { sidePanel ->
+            val showPreview = if (sidePanel) landscapePreview else portraitPreview
             LiveSaveActions(canSave, sidePanel,
                 onSaveAndReview = { viewModel.triggerSave() },
                 onSaveOnly = { viewModel.triggerSave(playAfterSave = false) })
             Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp),
                 horizontalArrangement = Arrangement.SpaceBetween) {
-                TextButton(onClick = { showPreview = !showPreview }) {
+                TextButton(onClick = {
+                    if (sidePanel) landscapePreview = !landscapePreview else portraitPreview = !portraitPreview
+                }) {
                     Text(if (sidePanel) { if (showPreview) "收起即時" else "顯示即時" }
                         else { if (showPreview) "收起即時視窗" else "顯示即時視窗" })
                 }
                 TextButton(onClick = { showHelp = true }) { Text("操作說明") }
+            }
+        },
+        landscapeFeedback = { modifier ->
+            if (save.phase != SavePhase.IDLE) Surface(modifier,
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+                contentColor = MaterialTheme.colorScheme.onSurface,
+                shape = MaterialTheme.shapes.medium) {
+                SaveStatusNotice(save, viewModel::retryClipSave, onOpenSavedClip)
             }
         },
         modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),

@@ -47,9 +47,11 @@ Theme.kt 同時設定全域 LocalContentColor 為 onBackground，讓直接位於
 
 ## Layout
 
-頂部錄影列跨頁共用，最小 64 dp；錄影按鈕至少 48 dp，練習主要保存按鈕至少 56 dp。全域遵守 safeDrawingPadding。影片使用 FIT，不以填滿裁掉身體。
+錄影控制跨頁共用，一般頂部列最小 64 dp；橫向練習改為左上角浮動緊湊版本，不預留頂部高度。錄影按鈕至少 48 dp，練習主要保存按鈕至少 56 dp。全域遵守 safeDrawingPadding。影片使用 FIT，不以填滿裁掉身體。
 
-練習 delay 頁在可用寬度大於高度時，影片使用完整可用高度，標題、保存結果和主要保存操作移到右側可捲動欄，寬度 180–240 dp；包括小於 600 dp 的窄橫向視窗。直向維持上下配置。即時小窗在橫向隨影片高度縮至 64–96 dp 寬，並可收起。
+練習 delay 頁在可用寬度大於高度時，影片使用完整可用寬、高。使用者回饋上一版仍太小，因此取消固定側欄與頂部列的空間保留；控制以右上角「操作」展開，220–300 dp 的非模態浮動面板可捲動。展開／收起不改變影片尺寸，不重新建立播放器；返回鍵優先收起面板。面板不鎖焦點，收起按鈕保持同一位置的語意節點。一般狀態與設定收進面板；左上角錄影時間和開始／停止始終可操作，單箭保存結果留在左下角，失敗不因收起消失。包括小於 600 dp 的窄橫向視窗。直向維持上下配置。
+
+即時小窗在橫向預設收起，操作面板可再開啟；顯示時位於右下角，隨影片高度縮至 64–96 dp 寬。直向預設顯示並沿用慣用手位置。兩種方向分別記住開關，減少對延遲影片的遮擋。
 
 暖機使用轉圈圈與中央大字剩餘秒數，並說明正在建立設定的延遲；到 0 秒仍顯示等待首畫格，實際呈現首畫格才移除。
 
@@ -57,7 +59,7 @@ Theme.kt 同時設定全域 LocalContentColor 為 onBackground，讓直接位於
 
 ## Elevation & Depth
 
-使用既有 Surface 與 Material 對話框。影片上只保留必要的即時取景標籤；常駐手勢教學移至操作說明。
+使用既有 Surface 與 Material 對話框。橫向浮動操作與錄影控制使用現有 surface 色的 94% 不透明度並明定 onSurface 字色；不新增品牌色與裝飾陰影。常駐手勢教學移至操作說明。
 
 ## Shapes
 
@@ -65,7 +67,7 @@ Theme.kt 同時設定全域 LocalContentColor 為 onBackground，讓直接位於
 
 ## Components
 
-`LivePracticeLayout`、`LiveSaveActions` 與 `DelayWarmupIndicator` 擁有練習頁的橫直配置、保存按鈕和暖機倒數。`RecordingControls` 是錄影操作與結果的共用元件；`SaveStatusNotice` 是單箭保存結果；`VideoPlayer` 與 `PlaybackControls` 是兩種回看共用的影片與控制層。狀態行為見 [UX-CONTRACT.md](UX-CONTRACT.md)。
+`RecordingScreenLayout` 擁有頂部列／浮動錄影的空間配置，導航內容只有一個 composition 位置。`LivePracticeLayout`、`LiveSaveActions` 與 `DelayWarmupIndicator` 擁有練習頁的橫直配置、非模態操作面板、保存按鈕和暖機倒數。`RecordingControls` 是錄影操作與結果的共用元件，其 compact 版本共用狀態與切換規則；`SaveStatusNotice` 是單箭保存結果；`VideoPlayer` 與 `PlaybackControls` 是兩種回看共用的影片與控制層。狀態行為見 [UX-CONTRACT.md](UX-CONTRACT.md)。
 
 所有主要操作有文字。忙碌時禁用重複操作；成功由使用者點查看，不自動帶離練習；失敗持續顯示，能重試時才提供重試。鏡像只作用於影片層。
 

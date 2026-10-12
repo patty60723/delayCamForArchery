@@ -1,7 +1,5 @@
 package com.archery.delaycam.navigation
 
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -23,6 +21,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import com.archery.delaycam.ui.components.RecordingControls
+import com.archery.delaycam.ui.components.RecordingScreenLayout
 import androidx.navigation.navArgument
 import com.archery.delaycam.gallery.ClipEntry
 import com.archery.delaycam.state.AppState
@@ -91,11 +90,15 @@ fun DelayCamNavHost(viewModel: DelayCamViewModel) {
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        Column(Modifier.fillMaxSize().safeDrawingPadding()) {
-            RecordingControls(recordingPhase, recordingElapsed, recordingSave,
-                viewModel::toggleContinuousRecording, viewModel::retryRecordingSave, openSaved)
-            AppNavHost(navController, viewModel, Modifier.weight(1f), openSaved)
-        }
+        RecordingScreenLayout(
+            practice = route == Routes.LIVE,
+            recording = { compact, modifier ->
+                RecordingControls(recordingPhase, recordingElapsed, recordingSave,
+                    viewModel::toggleContinuousRecording, viewModel::retryRecordingSave, openSaved,
+                    compact = compact, modifier = modifier)
+            },
+            content = { modifier -> AppNavHost(navController, viewModel, modifier, openSaved) },
+        )
 
         toast?.let {
             Surface(
