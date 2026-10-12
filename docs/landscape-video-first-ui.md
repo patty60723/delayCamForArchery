@@ -13,7 +13,7 @@
 - RecordingScreenLayout：決定共用錄影控制用頂部列或浮動版本，導航內容維持單一 composition 位置。
 - RecordingControls：完整與 compact 共用錄影狀態、忙碌禁用、失敗重試及保存查看；compact 將結果放在第二列，避免兩個按鈕擠掉狀態。
 - LivePracticeLayout：滿版影片、非模態操作面板、返回鍵收起與獨立保存回饋區。
-- LiveScreen：依方向保存即時小窗開關，共用 LiveSaveActions、SaveStatusNotice 和 DelayWarmupIndicator。
+- LiveScreen：依方向保存即時小窗開關，共用 LiveSaveActions、SaveStatusNotice 和 DelayWarmupIndicator。小窗收起時仍保留同一 attached PreviewView（1 dp、透明且不向輔助功能暴露），持續供應 CameraX 綁定的 Preview Surface，避免第一次橫向啟動因缺少 Surface 而停住擷取；開關小窗不重新綁定相機。
 
 只調整介面配置；手勢、延遲來源、錄影與匯出生命週期沿用既有流程。DESIGN.md 與 UX-CONTRACT.md 已同步上述使用者要求的配置變更，未新增色彩或另一組狀態來源。
 

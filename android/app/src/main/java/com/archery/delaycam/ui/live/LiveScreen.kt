@@ -1,7 +1,6 @@
 package com.archery.delaycam.ui.live
 
 import android.net.Uri
-import androidx.camera.view.PreviewView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
@@ -9,10 +8,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
 import com.archery.delaycam.settings.DominantHand
 import com.archery.delaycam.state.AppState
 import com.archery.delaycam.state.SavePhase
@@ -66,24 +62,14 @@ fun LiveScreen(
                 DelayWarmupIndicator(remaining, settings.delaySec, Modifier.align(Alignment.Center))
             }
             val landscape = maxWidth > maxHeight
-            if (if (landscape) landscapePreview else portraitPreview) {
-                val previewWidth = if (landscape) (maxHeight * 0.24f).coerceIn(64.dp, 96.dp)
-                    else 96.dp
-                val previewAlignment = if (landscape) Alignment.BottomEnd
-                    else if (settings.dominantHand == DominantHand.LEFT) Alignment.TopEnd
-                    else Alignment.TopStart
-                Column(Modifier.align(previewAlignment).padding(8.dp).width(previewWidth)
-                    .background(MaterialTheme.colorScheme.surface)) {
-                    Text("即時", Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                        style = MaterialTheme.typography.labelMedium)
-                    AndroidView(factory = { context -> PreviewView(context).apply {
-                        implementationMode = PreviewView.ImplementationMode.COMPATIBLE
-                        scaleType = PreviewView.ScaleType.FIT_CENTER
-                    } }, update = { viewModel.previewUseCase.surfaceProvider = it.surfaceProvider },
-                        modifier = Modifier.fillMaxWidth().aspectRatio(3f / 4f)
-                            .semantics { contentDescription = "即時相機取景" })
-                }
-            }
+            val showPreview = if (landscape) landscapePreview else portraitPreview
+            val previewWidth = if (landscape) (maxHeight * 0.24f).coerceIn(64.dp, 96.dp)
+                else 96.dp
+            val previewAlignment = if (landscape) Alignment.BottomEnd
+                else if (settings.dominantHand == DominantHand.LEFT) Alignment.TopEnd
+                else Alignment.TopStart
+            LiveCameraPreview(viewModel.previewUseCase, showPreview, previewWidth,
+                Modifier.align(previewAlignment).padding(8.dp))
         } },
         controls = { sidePanel ->
             val showPreview = if (sidePanel) landscapePreview else portraitPreview
