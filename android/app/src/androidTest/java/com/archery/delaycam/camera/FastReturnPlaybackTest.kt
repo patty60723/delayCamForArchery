@@ -13,7 +13,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.archery.delaycam.BuildConfig
 import com.archery.delaycam.state.AppState
 import com.archery.delaycam.ui.DelayCamViewModel
-import com.archery.delaycam.ui.VideoPlayer
+import com.archery.delaycam.ui.playback.VideoPlayer
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.Assert.*
 import org.junit.Assume.assumeTrue

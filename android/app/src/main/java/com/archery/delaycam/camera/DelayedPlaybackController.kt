@@ -11,19 +11,10 @@ import androidx.media3.exoplayer.ExoPlayer
 private const val TAG = "DelayedPlaybackController"
 
 /**
- * Drives the "always N seconds behind" delay mirror (spec 2.1) by feeding an
- * ExoPlayer a playlist of rolling-buffer segments, each one added exactly
- * `delaySec` after it finished recording. Because ExoPlayer just plays its
- * queue back-to-back in real time, the player naturally stays `delaySec`
- * behind the camera with no manual seeking - this is a direct reading of the
- * spec 5.2 line "延遲顯示透過播放「N 秒前的片段」達成".
- *
- * NOT YET VERIFIED ON DEVICE. Before trusting this: check that consecutive
- * MediaItems from different segment files play back seamlessly (ExoPlayer
- * should pre-buffer the next item, but a visible stutter at each ~1s segment
- * boundary is possible and may need ExoPlayer's `setPauseAtEndOfMediaItems`/
- * preload tuning) and that a mid-session delaySec change doesn't leave stale
- * timers firing against the old delay window.
+ * Baseline playback schedules completed segments after the configured delay.
+ * Trial fast return replaces that queue at now-delay and then appends contiguous
+ * finalized segments. Leases keep files immutable until all player readers finish.
+ * All methods are confined to the player's main thread.
  */
 class DelayedPlaybackController(
     private val exoPlayer: ExoPlayer,
@@ -34,6 +25,15 @@ class DelayedPlaybackController(
     private data class Pinned(val ids: Set<String>, val lease: ImmutableSegmentStore.Lease)
     private val pinned = mutableListOf<Pinned>()
     private var fastTail: SegmentInfo? = null
+
+    fun fastSourcePositionMs(): Long? {
+        if (fastTail == null) return null
+        val currentId = exoPlayer.currentMediaItem?.mediaId ?: return null
+        val source = pinned.asSequence().flatMap { it.lease.segments.asSequence() }
+            .firstOrNull { id(it) == currentId } ?: return null
+        return source.startedAtMs + exoPlayer.currentPosition.coerceAtMost(source.mediaDurationMs) *
+            (source.endedAtMs - source.startedAtMs) / source.mediaDurationMs.coerceAtLeast(1)
+    }
 
     private fun id(segment: SegmentInfo) = "${segment.file.absolutePath}:${segment.startedAtMs}:${segment.endedAtMs}"
     private fun item(segment: SegmentInfo) = MediaItem.Builder()
@@ -128,12 +128,7 @@ class DelayedPlaybackController(
         }
     }
 
-    /**
-     * Called when leaving REPLAY back to LIVE: the backlog scheduled during
-     * the replay is stale (it covers a window the archer already watched),
-     * so drop it and re-warm-up rather than dumping a burst of old segments
-     * into the player - mirrors the web prototype's buffer-clear-on-resume choice.
-     */
+    /** Cancel every old timer and reader; the caller decides whether to retain source history. */
     fun reset() {
         scheduled.clear()
         handler.removeCallbacksAndMessages(null)

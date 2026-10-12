@@ -435,6 +435,13 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
                 Log.w(TAG, "fast return first-frame timeout: falling back to warmup")
                 resetDelayedPlayback()
             }
+            val sourcePosition = delayedPlayback.fastSourcePositionMs()
+            if (BuildConfig.FAST_RESUME_TRIAL && liveHasRenderedFrame &&
+                captureSession.isForeground() && _appState.value == AppState.LIVE && sourcePosition != null &&
+                kotlin.math.abs(System.currentTimeMillis() - sourcePosition - settings.value.delaySec * 1000L) > 3_000L) {
+                Log.w(TAG, "fast return source drift: falling back to warmup")
+                resetDelayedPlayback()
+            }
             val playbackState = livePlayer.playbackState
             // ENDED means the playlist ran out while the next segment is being
             // produced. enqueue() resumes from that new item when it arrives.
