@@ -63,4 +63,15 @@
 
 新增 JVM 測試涵蓋目標選擇、缺段／時間異常、長時間檔案輪替、同時播放與匯出的保護及釋放；原生測試使用實際 H.264、Media3 解碼、ViewModel 返回流程、背景／設定失效及單一編碼器輸出。原有手勢、錄影保存、橫向版面與相機連接測試也需通過。
 
-CI 結果與 APK 連結於完成後記錄。Pixel 的發熱、連續練習、真人手勢辨識與實際恢復時間仍以使用者對照測試為準。未加入多裝置串流；下一步依本次回饋修正，再做熱點＋瀏覽器觀看原型。
+2026-10-12 驗證完成：
+
+- [完整 CI](https://github.com/patty60723/delayCamForArchery/actions/runs/38259951512)：38 項 JVM + 26 項原生 = 64 項通過，零失敗、零跳過。
+- 原生環境為 API 34、x86_64、Pixel 6 模擬器設定，前相機 emulated。涵蓋實際編碼 MP4 時間核對、Media3 首畫格、連續三次切換播放頁、背景／設定變更回退、現有手勢事件、錄影匯出和版面回歸。
+- `COEXISTENCE_INSTALL_OK`：模擬器確認 `.delayfix3` 與 `.fastresume` 兩個套件同時安裝。
+- [APK ZIP](https://github.com/patty60723/delayCamForArchery/actions/runs/38259951512/artifacts/11751734043)：解壓縮安裝 `app-debug.apk`。版本 `0.2.4-fast-return-test`，versionCode 7；Actions 產物保留至 2026-10-26。
+- 已測試程式 commit：`2275bb27dbae38c42e6f116fbcd849994f5646c6`；其後只補充本文件的驗證紀錄。
+- APK SHA-256：`e4e4a0929d139bc3cc3da353b68e8155238041250af9b064e1a4edd21e736a65`。
+- 簽章 SHA-256：`a2e1d47174b2a24a99045fd4795ba37f97f115d3143733067a4859ce8555b042`，沿用既有 CI 簽章，後續相同測試套件可覆蓋更新。
+- 前一輪相同功能測試（[run 38259713282](https://github.com/patty60723/delayCamForArchery/actions/runs/38259713282)）連續三次返回的首畫格等待為 208、169、273 ms；這是已完成測試影片的模擬器數據，不代表 Pixel 實際攝影管線或效能保證。
+
+[PR #6](https://github.com/patty60723/delayCamForArchery/pull/6) 保留 draft 供並存測試，尚未合併／切換正式預設。Pixel 的發熱、連續練習、真人手勢辨識與實際恢復時間仍以使用者對照測試為準。未加入多裝置串流；下一步依本次回饋修正，再做熱點＋瀏覽器觀看原型。
