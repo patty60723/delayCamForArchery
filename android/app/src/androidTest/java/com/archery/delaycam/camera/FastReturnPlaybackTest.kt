@@ -17,6 +17,9 @@ import com.archery.delaycam.state.AppState
 import com.archery.delaycam.ui.DelayCamViewModel
 import com.archery.delaycam.ui.playback.VideoPlayer
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
+import com.archery.delaycam.settings.SettingsRepository
 import org.junit.Assert.*
 import org.junit.Assume.assumeTrue
 import org.junit.Rule
@@ -131,6 +134,8 @@ class FastReturnPlaybackTest {
             vm = ViewModelProvider(owner, ViewModelProvider.AndroidViewModelFactory(context.applicationContext as Application))
                 .get(DelayCamViewModel::class.java)
         }
+        val loaded = runBlocking { SettingsRepository(context).settingsFlow.first() }
+        compose.waitUntil(5_000) { vm.settings.value == loaded }
         try {
             compose.setContent {
                 val state by vm.appState.collectAsState()
@@ -170,6 +175,8 @@ class FastReturnPlaybackTest {
             vm = ViewModelProvider(owner, ViewModelProvider.AndroidViewModelFactory(context.applicationContext as Application))
                 .get(DelayCamViewModel::class.java)
         }
+        val loaded = runBlocking { SettingsRepository(context).settingsFlow.first() }
+        compose.waitUntil(5_000) { vm.settings.value == loaded }
         try {
             compose.runOnIdle {
                 seedReplay(vm, firstStore)

@@ -55,6 +55,12 @@ class GestureEngine(
     } catch (e: Exception) {
         Log.w(TAG, "createFromOptions failed for delegate=$delegate", e)
         null
+    } catch (e: LinkageError) {
+        // Some ABIs/delegate installations have no compatible native library.
+        // This includes the subsequent NoClassDefFoundError after a failed JNI
+        // static initializer. Keep camera/playback and manual controls usable.
+        Log.w(TAG, "native gesture library unavailable for delegate=$delegate", e)
+        null
     }
 
     fun analyzeBitmap(bitmap: Bitmap, timestampMs: Long) {
