@@ -3,6 +3,8 @@ package com.archery.delaycam.camera
 import android.app.Application
 import android.os.SystemClock
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.lifecycle.ViewModelProvider
@@ -130,19 +132,32 @@ class FastReturnPlaybackTest {
                 .get(DelayCamViewModel::class.java)
         }
         try {
-            compose.setContent { VideoPlayer(vm.livePlayer, true, Modifier.fillMaxSize()) }
-            compose.runOnIdle {
-                seedReplay(vm, store)
-                vm.toggleContinuousRecording()
-                vm.skipReplay()
-                assertEquals(AppState.LIVE, vm.appState.value)
-                assertTrue(vm.livePlayer.mediaItemCount > 0)
-                assertEquals(0, vm.warmupRemainingSec.value)
-                assertTrue(vm.isContinuousRecording.value)
-                assertNotNull((field(vm, "segmentBuffer") as SegmentBuffer).oldestStartMs())
+            compose.setContent {
+                val state by vm.appState.collectAsState()
+                if (state == AppState.REPLAY) VideoPlayer(vm.replayPlayer, true, Modifier.fillMaxSize())
+                else VideoPlayer(vm.livePlayer, true, Modifier.fillMaxSize())
             }
-            compose.waitUntil(10_000) { vm.warmupRemainingSec.value == null }
-            compose.runOnIdle { assertTrue(vm.isContinuousRecording.value); assertNull(vm.livePlayer.playerError) }
+            repeat(3) { attempt ->
+                compose.runOnIdle {
+                    seedReplay(vm, store)
+                    (field(vm, "delayedPlayback") as DelayedPlaybackController).reset()
+                    if (attempt == 0) vm.toggleContinuousRecording()
+                }
+                // Let Compose detach LIVE and attach REPLAY before exercising the real return path.
+                compose.waitForIdle()
+                val returnedAt = SystemClock.elapsedRealtime()
+                compose.runOnIdle {
+                    vm.skipReplay()
+                    assertEquals(AppState.LIVE, vm.appState.value)
+                    assertTrue(vm.livePlayer.mediaItemCount > 0)
+                    assertEquals(0, vm.warmupRemainingSec.value)
+                    assertTrue(vm.isContinuousRecording.value)
+                    assertNotNull((field(vm, "segmentBuffer") as SegmentBuffer).oldestStartMs())
+                }
+                compose.waitUntil(10_000) { vm.warmupRemainingSec.value == null }
+                android.util.Log.i("FastReturnTest", "attempt=$attempt firstFrameMs=${SystemClock.elapsedRealtime() - returnedAt}")
+                compose.runOnIdle { assertTrue(vm.isContinuousRecording.value); assertNull(vm.livePlayer.playerError) }
+            }
         } finally { compose.runOnUiThread { owner.clear() }; store.close() }
     }
 

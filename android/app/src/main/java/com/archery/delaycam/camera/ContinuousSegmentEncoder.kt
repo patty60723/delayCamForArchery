@@ -381,7 +381,10 @@ class ContinuousSegmentEncoder(
         }
         val stopMs = (System.nanoTime() - stopStartNs) / 1_000_000
         val releaseStartNs = System.nanoTime()
-        m.release()
+        try { m.release() } catch (e: Exception) {
+            immutableStore?.discard(file)
+            throw e
+        }
         val releaseMs = (System.nanoTime() - releaseStartNs) / 1_000_000
         if (stopMs > 100 || releaseMs > 100) {
             Log.w(TAG, "slow muxer teardown for ${file.name}: stop=${stopMs}ms release=${releaseMs}ms")
