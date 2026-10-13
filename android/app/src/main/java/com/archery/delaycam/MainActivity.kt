@@ -45,6 +45,16 @@ class MainActivity : ComponentActivity() {
     private var lastLoggedRotationDegrees = -1
     private var imageAnalysis: ImageAnalysis? = null
     private val displayManager by lazy { applicationContext.getSystemService(DisplayManager::class.java) }
+    private val rotationHandler = Handler(Looper.getMainLooper())
+    private var lastAppliedRotation = -1
+    private val rotationSync = object : Runnable {
+        override fun run() {
+            updateCameraRotation()
+            // A 180-degree turn can notify listeners before the Display cache
+            // catches up, without a later size/configuration callback.
+            rotationHandler.postDelayed(this, 250L)
+        }
+    }
     private val displayListener = object : DisplayManager.DisplayListener {
         override fun onDisplayAdded(displayId: Int) = Unit
         override fun onDisplayRemoved(displayId: Int) = Unit
@@ -61,8 +71,12 @@ class MainActivity : ComponentActivity() {
         // rotation when a 180-degree turn has no public configuration difference.
         val displayId = window.decorView.display?.displayId ?: android.view.Display.DEFAULT_DISPLAY
         val rotation = displayManager.getDisplay(displayId)?.rotation ?: Surface.ROTATION_0
-        imageAnalysis?.targetRotation = rotation
-        viewModel.previewUseCase.targetRotation = rotation
+        if (lastAppliedRotation != rotation) {
+            Log.d("MainActivity", "camera target rotation=$rotation")
+            lastAppliedRotation = rotation
+        }
+        imageAnalysis?.let { if (it.targetRotation != rotation) it.targetRotation = rotation }
+        if (viewModel.previewUseCase.targetRotation != rotation) viewModel.previewUseCase.targetRotation = rotation
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
@@ -76,11 +90,13 @@ class MainActivity : ComponentActivity() {
         super.onStart()
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         viewModel.onAppForegrounded()
+        rotationHandler.post(rotationSync)
         displayManager.registerDisplayListener(displayListener, Handler(Looper.getMainLooper()))
         updateCameraRotation()
     }
 
     override fun onStop() {
+        rotationHandler.removeCallbacks(rotationSync)
         displayManager.unregisterDisplayListener(displayListener)
         viewModel.onAppBackgrounded()
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)

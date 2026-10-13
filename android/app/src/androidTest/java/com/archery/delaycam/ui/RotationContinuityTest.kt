@@ -90,7 +90,7 @@ class RotationContinuityTest {
                     .getDisplay(activity.window.decorView.display.displayId).rotation
                 fun rotate(orientation: Int, expectedConfiguration: Int) {
                     scenario.onActivity { it.requestedOrientation = orientation }
-                    compose.waitUntil(10_000) {
+                    try { compose.waitUntil(10_000) {
                         activity.resources.configuration.orientation == expectedConfiguration &&
                             physicalRotation() == when (orientation) {
                                 ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE -> Surface.ROTATION_90
@@ -99,6 +99,10 @@ class RotationContinuityTest {
                             } &&
                             (field(activity, "imageAnalysis") as? ImageAnalysis)?.targetRotation ==
                             physicalRotation()
+                    } } catch (failure: Throwable) {
+                        throw AssertionError("rotation requested=$orientation physical=${physicalRotation()} " +
+                            "window=${activity.window.decorView.display.rotation} " +
+                            "analysis=${(field(activity, "imageAnalysis") as? ImageAnalysis)?.targetRotation}", failure)
                     }
                     compose.waitForIdle()
                     scenario.onActivity {
