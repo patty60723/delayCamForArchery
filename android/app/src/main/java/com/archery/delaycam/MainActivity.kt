@@ -44,17 +44,23 @@ class MainActivity : ComponentActivity() {
     private var cameraBound = false
     private var lastLoggedRotationDegrees = -1
     private var imageAnalysis: ImageAnalysis? = null
-    private val displayManager by lazy { getSystemService(DisplayManager::class.java) }
+    private val displayManager by lazy { applicationContext.getSystemService(DisplayManager::class.java) }
     private val displayListener = object : DisplayManager.DisplayListener {
         override fun onDisplayAdded(displayId: Int) = Unit
         override fun onDisplayRemoved(displayId: Int) = Unit
         override fun onDisplayChanged(displayId: Int) {
-            if (window.decorView.display?.displayId == displayId) updateCameraRotation()
+            if (window.decorView.display?.displayId == displayId) {
+                updateCameraRotation()
+                window.decorView.post { updateCameraRotation() }
+            }
         }
     }
 
     private fun updateCameraRotation() {
-        val rotation = window.decorView.display?.rotation ?: Surface.ROTATION_0
+        // View.display can carry Activity resource overrides with the previous
+        // rotation when a 180-degree turn has no public configuration difference.
+        val displayId = window.decorView.display?.displayId ?: android.view.Display.DEFAULT_DISPLAY
+        val rotation = displayManager.getDisplay(displayId)?.rotation ?: Surface.ROTATION_0
         imageAnalysis?.targetRotation = rotation
         viewModel.previewUseCase.targetRotation = rotation
     }

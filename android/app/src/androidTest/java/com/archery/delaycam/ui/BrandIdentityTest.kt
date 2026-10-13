@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.provider.MediaStore
 import androidx.test.platform.app.InstrumentationRegistry
+import com.archery.delaycam.BuildConfig
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -12,7 +13,7 @@ class BrandIdentityTest {
     @Test fun testAppHasShortDistinctLabelAndAdaptiveIcon() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val manager = context.packageManager
-        assertEquals("測試9·箭影", manager.getApplicationLabel(context.applicationInfo).toString())
+        assertEquals(if (BuildConfig.FAST_RESUME_TRIAL) "測試9·箭影" else "箭影", manager.getApplicationLabel(context.applicationInfo).toString())
         val icon = manager.getApplicationIcon(context.applicationInfo)
         val bitmap = Bitmap.createBitmap(432, 432, Bitmap.Config.ARGB_8888)
         icon.setBounds(0, 0, 432, 432)

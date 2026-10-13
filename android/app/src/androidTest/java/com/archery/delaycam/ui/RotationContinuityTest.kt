@@ -8,6 +8,7 @@ import android.graphics.Bitmap
 import android.media.MediaMetadataRetriever
 import android.provider.MediaStore
 import android.view.Surface
+import android.hardware.display.DisplayManager
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.view.PreviewView
 import androidx.compose.ui.test.*
@@ -85,17 +86,19 @@ class RotationContinuityTest {
                 }
                 compose.waitUntil(10_000) { vm.recordingPhase.value == RecordingPhase.RECORDING }
 
+                fun physicalRotation() = activity.applicationContext.getSystemService(DisplayManager::class.java)
+                    .getDisplay(activity.window.decorView.display.displayId).rotation
                 fun rotate(orientation: Int, expectedConfiguration: Int) {
                     scenario.onActivity { it.requestedOrientation = orientation }
                     compose.waitUntil(10_000) {
                         activity.resources.configuration.orientation == expectedConfiguration &&
-                            activity.window.decorView.display.rotation == when (orientation) {
+                            physicalRotation() == when (orientation) {
                                 ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE -> Surface.ROTATION_90
                                 ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE -> Surface.ROTATION_270
                                 else -> Surface.ROTATION_0
                             } &&
                             (field(activity, "imageAnalysis") as? ImageAnalysis)?.targetRotation ==
-                            activity.window.decorView.display.rotation
+                            physicalRotation()
                     }
                     compose.waitForIdle()
                     scenario.onActivity {
