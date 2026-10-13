@@ -19,10 +19,12 @@
 
 ## 驗證
 
-新增 RotationContinuityTest，使用真正 MainActivity、模擬器前鏡頭與編碼器，驗證橫向初始小窗、橫直／180° 旋轉不重建 Activity、不更換編碼器、不清空緩衝、不重新暖機，手動小窗選擇保留；持續錄影並保存可解碼尾段；真正切背景仍建立新 session。FrameCanvasTest 驗證轉向後上下邊緣都存在、等比縮放、黑邊不殘留上一張像素。
+新增 RotationContinuityTest，使用真正 MainActivity、模擬器前鏡頭與編碼器，驗證啟動即轉橫向的小窗、橫直／180° 旋轉不重建 Activity、不更換編碼器、不清空緩衝、不重新暖機，手動小窗選擇保留；持續錄影並保存可解碼尾段；真正切背景仍建立新 session。FrameCanvasTest 驗證轉向後上下邊緣都存在、等比縮放、黑邊不殘留上一張像素。
 
-CI 與 APK 證據完成後補上。實機需確認：橫向直接開啟，暖機後來回轉向、邊錄邊轉向、小窗收起再旋轉、回桌面再返回。模擬器不取代 Pixel 手勢與相機硬體實測。
+CI 與 APK 證據完成後補上。實機需確認：橫向直接開啟及開啟後立即轉橫向，暖機後來回轉向、邊錄邊轉向、小窗收起再旋轉、回桌面再返回。模擬器不取代 Pixel 手勢與相機硬體實測。
 
 ## 安裝與分支
 
 版本 0.2.5-fast-return-test，versionCode 8，套件 com.archery.delaycam.fastresume，名稱「射箭 Delay 快速返回測試」。沿用原測試版簽章，可覆蓋 0.2.4；原「修正版 3」仍可並存。變更保留於 PR #6 草稿，不合併正式分支。
+
+測試環境修正：首次 CI 在啟動轉向的前置條件超時，App 的 fullSensor 不遵從 UiAutomation 使用者旋轉鎖定。測試改由 Activity.requestedOrientation 驅動實際組態變更，不改 App 的感測器旋轉政策；播放連續性使用實際送交渲染的畫格數驗證，避免在接段瞬間取樣 isPlaying。

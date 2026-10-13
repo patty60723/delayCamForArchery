@@ -1,7 +1,6 @@
 package com.archery.delaycam.ui
 
 import android.Manifest
-import android.app.UiAutomation
 import android.content.ContentValues
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
@@ -23,6 +22,7 @@ import com.archery.delaycam.state.SavePhase
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
+import java.util.concurrent.atomic.AtomicInteger
 
 /** Exercise the actual manifest, camera, encoder and activity lifecycle together. */
 class RotationContinuityTest {
@@ -35,15 +35,19 @@ class RotationContinuityTest {
     @Test fun landscapeLaunchAndRotationKeepPreviewBufferAndRecording() {
         val automation = instrumentation.uiAutomation
         automation.grantRuntimePermission(instrumentation.targetContext.packageName, Manifest.permission.CAMERA)
-        automation.setRotation(UiAutomation.ROTATION_FREEZE_90)
         var savedUri: android.net.Uri? = null
         try {
             ActivityScenario.launch(MainActivity::class.java).use { scenario ->
                 lateinit var activity: MainActivity
                 lateinit var vm: DelayCamViewModel
+                val renderedFrames = AtomicInteger()
                 scenario.onActivity {
                     activity = it
+                    // fullSensor intentionally ignores the OS user-rotation lock.
+                    // Request the test orientation on the Activity itself.
+                    it.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
                     vm = ViewModelProvider(it)[DelayCamViewModel::class.java]
+                    vm.livePlayer.setVideoFrameMetadataListener { _, _, _, _ -> renderedFrames.incrementAndGet() }
                 }
                 compose.waitUntil(10_000) {
                     activity.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
@@ -87,7 +91,6 @@ class RotationContinuityTest {
                 }
 
                 screenshot("rotation-cold-landscape")
-                automation.setRotation(UiAutomation.ROTATION_UNFREEZE)
                 rotate(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT, Configuration.ORIENTATION_PORTRAIT)
                 compose.onNodeWithContentDescription("即時相機取景").assertIsDisplayed()
                 compose.onNodeWithText("收起即時視窗").performClick()
@@ -103,11 +106,12 @@ class RotationContinuityTest {
                 // Let the new orientation reach finalized segments and delayed playback.
                 val elapsed = vm.recordingElapsedSec.value
                 compose.waitUntil(20_000) { vm.recordingElapsedSec.value >= elapsed + 8 }
+                val beforeFrames = renderedFrames.get()
+                compose.waitUntil(10_000) { renderedFrames.get() >= beforeFrames + 5 }
                 scenario.onActivity {
                     assertEquals(generation, field(vm, "bufferGeneration"))
                     assertNull(vm.warmupRemainingSec.value)
                     assertSame(encoder, field(vm, "segmentEncoder"))
-                    assertTrue(vm.livePlayer.isPlaying)
                 }
                 screenshot("rotation-recording-landscape")
                 scenario.onActivity { vm.toggleContinuousRecording() }
@@ -134,7 +138,6 @@ class RotationContinuityTest {
             }
         } finally {
             savedUri?.let { instrumentation.targetContext.contentResolver.delete(it, null, null) }
-            automation.setRotation(UiAutomation.ROTATION_UNFREEZE)
         }
     }
 
