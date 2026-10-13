@@ -7,6 +7,7 @@ data class AppSettings(
     val guideVertical: Boolean = true,
     val guideHorizontal: Boolean = true,
     val slowMoRate: Float = 0.5f,
+    val previewCorner: PreviewCorner = PreviewCorner.BOTTOM_RIGHT,
     val dominantHand: DominantHand = DominantHand.RIGHT,
 ) {
     companion object {
@@ -17,3 +18,6 @@ data class AppSettings(
 }
 
 enum class DominantHand { LEFT, RIGHT }
+
+
+enum class PreviewCorner { BOTTOM_LEFT, BOTTOM_RIGHT }

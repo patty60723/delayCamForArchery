@@ -9,7 +9,7 @@
     <application
         android:name=".DelayCamApp"
         android:allowBackup="false"
-        android:icon="@mipmap/ic_launcher"
+        android:icon="${appIcon}"
         android:label="${appLabel}"
         android:theme="@style/Theme.DelayCam"
         android:supportsRtl="true"

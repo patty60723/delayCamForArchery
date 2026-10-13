@@ -81,6 +81,9 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
     private val _appState = MutableStateFlow(AppState.LIVE)
     val appState: StateFlow<AppState> = _appState.asStateFlow()
 
+    private val _cameraAspectRatio = MutableStateFlow(3f / 4f)
+    val cameraAspectRatio: StateFlow<Float> = _cameraAspectRatio.asStateFlow()
+
     private val _warmupRemainingSec = MutableStateFlow<Int?>(null)
     val warmupRemainingSec: StateFlow<Int?> = _warmupRemainingSec.asStateFlow()
     private var liveHasRenderedFrame = false
@@ -342,6 +345,7 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
     /** Only called on cameraAnalysisExecutor, with the session captured before conversion. */
     fun onCameraFrame(bitmap: Bitmap, timestampMs: Long, sessionId: Long) {
         if (!captureSession.isCurrent(sessionId)) return
+        _cameraAspectRatio.value = bitmap.width.toFloat() / bitmap.height
         segmentEncoder?.onFrame(bitmap)
         if (captureSession.isCurrent(sessionId)) {
             gestureEngine.analyzeBitmap(bitmap, timestampMs)

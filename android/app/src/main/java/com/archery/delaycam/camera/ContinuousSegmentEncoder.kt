@@ -125,6 +125,9 @@ class ContinuousSegmentEncoder(
     private var lastSampleUs = 0L
     private var frameDurationUs = 33_333L
     private var hasSample = false
+    private val frameShapes = FrameShapeTimeline()
+    private var segmentAspect: Float? = null
+    private var mixedShapes = false
 
     fun setRingSize(size: Int) {
         ringSize = size.coerceAtLeast(2)
@@ -149,6 +152,7 @@ class ContinuousSegmentEncoder(
         // here could block waiting for a free input buffer, which would
         // mean actual frame capture pauses too - not just the file cut.
         val lockStartNs = System.nanoTime()
+        frameShapes.submitted(lockStartNs / 1_000L, bitmap.width.toFloat() / bitmap.height)
         val canvas = try {
             surface.lockHardwareCanvas()
         } catch (e: Exception) {
@@ -272,6 +276,10 @@ class ContinuousSegmentEncoder(
                         buffer.position(bufferInfo.offset)
                         buffer.limit(bufferInfo.offset + bufferInfo.size)
                         m.writeSampleData(muxerTrackIndex, buffer, bufferInfo)
+                        val aspect = frameShapes.at(bufferInfo.presentationTimeUs)
+                        if (!hasSample) segmentAspect = aspect
+                        else if (aspect != segmentAspect) mixedShapes = true
+                        if (aspect == null) mixedShapes = true
                         if (!hasSample) {
                             firstSampleUs = bufferInfo.presentationTimeUs
                             hasSample = true
@@ -351,6 +359,8 @@ class ContinuousSegmentEncoder(
         segmentStartedAtMs = startedAtMs
         nextCutAtMs = startedAtMs + SEGMENT_TARGET_MS
         hasSample = false
+        segmentAspect = null
+        mixedShapes = false
         frameDurationUs = 33_333L
     }
 
@@ -390,7 +400,8 @@ class ContinuousSegmentEncoder(
             Log.w(TAG, "slow muxer teardown for ${file.name}: stop=${stopMs}ms release=${releaseMs}ms")
         }
         val durationMs = if (hasSample) (lastSampleUs - firstSampleUs + frameDurationUs) / 1000 else 0L
-        val info = SegmentInfo(file, segmentStartedAtMs, endedAtMs, durationMs)
+        val info = SegmentInfo(file, segmentStartedAtMs, endedAtMs, durationMs,
+            contentAspectRatio = segmentAspect.takeUnless { mixedShapes })
         immutableStore?.publish(file)
         // Diagnostic for the still-remaining periodic stalls (~1 in 7
         // segments, no clear signal on which one or why): logging every

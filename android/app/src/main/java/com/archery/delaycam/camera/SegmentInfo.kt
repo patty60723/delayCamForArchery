@@ -14,5 +14,6 @@ data class SegmentInfo(
     val startedAtMs: Long,
     val endedAtMs: Long,
     val mediaDurationMs: Long = endedAtMs - startedAtMs,
+    val contentAspectRatio: Float? = null, // null for mixed/unknown shapes: show the complete encoded canvas
 )
 

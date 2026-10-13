@@ -19,10 +19,11 @@ android {
         minSdk = 29
         targetSdk = 34
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        versionCode = 8
-        versionName = "0.2.5"
+        versionCode = 9
+        versionName = "0.2.6"
         buildConfigField("boolean", "FAST_RESUME_TRIAL", fastResumeTrial.toString())
-        manifestPlaceholders["appLabel"] = if (fastResumeTrial) "射箭 Delay 快速返回測試" else "@string/app_name"
+        manifestPlaceholders["appIcon"] = if (fastResumeTrial) "@mipmap/ic_launcher_test" else "@mipmap/ic_launcher"
+        manifestPlaceholders["appLabel"] = if (fastResumeTrial) "測試9·箭影" else "@string/app_name"
     }
 
     // CI pins a cached debug key so later test builds can update this package.

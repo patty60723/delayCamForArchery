@@ -1,5 +1,8 @@
 package com.archery.delaycam.camera
 
+import android.os.Bundle
+import androidx.media3.common.MediaMetadata
+import com.archery.delaycam.ui.playback.CONTENT_ASPECT_KEY
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -37,7 +40,10 @@ class DelayedPlaybackController(
 
     private fun id(segment: SegmentInfo) = "${segment.file.absolutePath}:${segment.startedAtMs}:${segment.endedAtMs}"
     private fun item(segment: SegmentInfo) = MediaItem.Builder()
-        .setUri(segment.file.toUri()).setMediaId(id(segment)).build()
+        .setUri(segment.file.toUri()).setMediaId(id(segment))
+        .setMediaMetadata(MediaMetadata.Builder().setExtras(Bundle().apply {
+            segment.contentAspectRatio?.let { putFloat(CONTENT_ASPECT_KEY, it) }
+        }).build()).build()
 
     /** Called on main. New playlist owns a lease before any old queue is discarded. */
     fun resume(plan: FastResumePlan, store: ImmutableSegmentStore): Boolean {

@@ -21,7 +21,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.archery.delaycam.settings.AppSettings
-import com.archery.delaycam.settings.DominantHand
+import com.archery.delaycam.settings.PreviewCorner
+import com.archery.delaycam.BuildConfig
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
 import com.archery.delaycam.ui.DelayCamViewModel
 
 /** Settings screen (spec 3.3 / 4). */
@@ -90,18 +93,19 @@ fun SettingsScreen(viewModel: DelayCamViewModel, onBack: () -> Unit) {
             }
         }
 
-        Text("慣用手", color = Color.White, modifier = Modifier.padding(top = 16.dp))
+        Text("即時視窗位置", color = Color.White, modifier = Modifier.padding(top = 16.dp))
         Text(
-            "手勢辨識已改為偵測全畫面;這個設定只決定即時小視窗顯示在畫面左上或右上角,避免被比手勢的那隻手擋住",
+            "選擇即時視窗放在左下或右下；橫直畫面共用，關閉 App 後也會記住。",
             color = Color(0xFF9AA1AB),
             modifier = Modifier.padding(top = 4.dp),
         )
         Row(modifier = Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            DominantHand.entries.forEach { hand ->
-                val label = if (hand == DominantHand.RIGHT) "右" else "左"
-                val selected = settings.dominantHand == hand
+            PreviewCorner.entries.forEach { corner ->
+                val label = if (corner == PreviewCorner.BOTTOM_LEFT) "左下" else "右下"
+                val selected = settings.previewCorner == corner
                 Button(
-                    onClick = { viewModel.updateSettings { it.copy(dominantHand = hand) } },
+                    onClick = { viewModel.updateSettings { it.copy(previewCorner = corner) } },
+                    modifier = Modifier.semantics { this.selected = selected },
                     colors = if (selected) {
                         androidx.compose.material3.ButtonDefaults.buttonColors()
                     } else {
@@ -110,6 +114,9 @@ fun SettingsScreen(viewModel: DelayCamViewModel, onBack: () -> Unit) {
                 ) { Text(label) }
             }
         }
+        Text("箭影 · " + (if (BuildConfig.FAST_RESUME_TRIAL) "測試版 " else "一般版 ") +
+            BuildConfig.VERSION_NAME + " (" + BuildConfig.VERSION_CODE + ")",
+            color = Color(0xFF9AA1AB), modifier = Modifier.padding(top = 24.dp))
     }
 }
 
@@ -143,3 +150,4 @@ private fun SwitchField(label: String, checked: Boolean, onCheckedChange: (Boole
         Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }
+

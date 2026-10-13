@@ -16,6 +16,10 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModelProvider
 import androidx.test.core.app.ActivityScenario
 import androidx.test.platform.app.InstrumentationRegistry
+import com.archery.delaycam.settings.SettingsRepository
+import com.archery.delaycam.settings.PreviewCorner
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.flow.first
 import com.archery.delaycam.MainActivity
 import com.archery.delaycam.camera.RecordingPhase
 import com.archery.delaycam.state.SavePhase
@@ -35,6 +39,8 @@ class RotationContinuityTest {
     @Test fun landscapeLaunchAndRotationKeepPreviewBufferAndRecording() {
         val automation = instrumentation.uiAutomation
         automation.grantRuntimePermission(instrumentation.targetContext.packageName, Manifest.permission.CAMERA)
+        val repository = SettingsRepository(instrumentation.targetContext)
+        val previousSettings = runBlocking { repository.settingsFlow.first() }
         var savedUri: android.net.Uri? = null
         try {
             ActivityScenario.launch(MainActivity::class.java).use { scenario ->
@@ -54,6 +60,20 @@ class RotationContinuityTest {
                 }
                 compose.onNodeWithContentDescription("即時相機取景").assertIsDisplayed()
                 compose.waitUntil(45_000) { vm.warmupRemainingSec.value == null && vm.cameraSessionForFrame() != null }
+                compose.onNodeWithContentDescription("顯示操作").performClick()
+                compose.onNodeWithText("設定").performClick()
+                compose.onNodeWithText("左下").performScrollTo().performClick().assertIsSelected()
+                runBlocking { repository.settingsFlow.first { it.previewCorner == PreviewCorner.BOTTOM_LEFT } }
+                compose.onNodeWithText("右下").performClick().assertIsSelected()
+                runBlocking { repository.settingsFlow.first { it.previewCorner == PreviewCorner.BOTTOM_RIGHT } }
+                compose.onNodeWithText("左下").performClick().assertIsSelected()
+                runBlocking { repository.settingsFlow.first { it.previewCorner == PreviewCorner.BOTTOM_LEFT } }
+                compose.onNodeWithText("‹").performScrollTo().performClick()
+                compose.onNodeWithContentDescription("收起操作").performClick()
+                val previewBounds = compose.onNodeWithContentDescription("即時相機取景").fetchSemanticsNode().boundsInRoot
+                val screenBounds = compose.onNodeWithTag("practice-layout").fetchSemanticsNode().boundsInRoot
+                assertTrue("Left corner setting places PiP on the left", previewBounds.center.x < screenBounds.center.x)
+                assertTrue("Landscape PiP is larger than the old 96 dp cap", previewBounds.width / activity.resources.displayMetrics.density > 96f)
                 val session = vm.cameraSessionForFrame()
                 val generation = field(vm, "bufferGeneration")
                 val encoder = field(vm, "segmentEncoder")
@@ -137,6 +157,7 @@ class RotationContinuityTest {
                 assertNotEquals(generation, field(vm, "bufferGeneration"))
             }
         } finally {
+            runBlocking { repository.save(previousSettings) }
             savedUri?.let { instrumentation.targetContext.contentResolver.delete(it, null, null) }
         }
     }

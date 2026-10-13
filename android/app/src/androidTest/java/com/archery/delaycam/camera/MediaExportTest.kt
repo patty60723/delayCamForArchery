@@ -137,6 +137,8 @@ class MediaExportTest {
             assertTrue("Need multiple keyframe-bounded files", completed.size >= 3)
             assertEquals(completed.size, completed.map { it.file }.distinct().size)
             assertTrue("Source/media timing must support fast seek", completed.dropLast(1).any { FastResumePlan.valid(it) })
+            assertTrue("Landscape samples retain their active picture shape", completed.any { it.contentAspectRatio == 4f / 3f })
+            assertTrue("Portrait samples retain their active picture shape", completed.any { it.contentAspectRatio == 3f / 4f })
             completed.forEach { segment ->
                 val retriever = MediaMetadataRetriever()
                 try {

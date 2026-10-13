@@ -24,6 +24,7 @@ fun LiveCameraPreview(
     width: Dp,
     modifier: Modifier = Modifier,
     showLabel: Boolean = true,
+    aspectRatio: Float = 3f / 4f,
 ) {
     Column(modifier.width(if (visible) width else 1.dp)
         .graphicsLayer { alpha = if (visible) 1f else 0f }
@@ -37,7 +38,7 @@ fun LiveCameraPreview(
             scaleType = PreviewView.ScaleType.FIT_CENTER
             preview.surfaceProvider = surfaceProvider
         } },
-            modifier = Modifier.fillMaxWidth().aspectRatio(3f / 4f)
+            modifier = Modifier.fillMaxWidth().aspectRatio(aspectRatio)
                 .semantics { contentDescription = "即時相機取景" })
     }
 }

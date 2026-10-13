@@ -25,11 +25,15 @@ IDLE → STARTING → RECORDING → STOPPING → IDLE。開始／停止由同一
 
 ## Practice Layout and Warmup
 
+0.2.6：即時小窗位置由 AppSettings.previewCorner / SettingsRepository 擁有，設定頁顯示左下與右下，變更立即生效且保存。大小／比例由 LiveScreen 擁有，PracticeCameraLayout 按其回報的完整尺寸配置唯一 PreviewView，避免套第二次固定 3:4 黑邊。保存回饋置於小窗相反側，預留設定面板的空間。
+
+延遲主畫面沿用 VideoPlayer，透過 fitActivePicture 明確變體只移除本編碼器已知的內部黑邊。Surface 提交時間與编码 PTS 對應 FrameShapeTimeline；SegmentInfo 只對整段比例一致的片段記錄 contentAspectRatio，播放 MediaItem 攜帶比例。UI 跟隨正在播放的片段，與當下手機方向解耦；混合／未知片段回完整 FIT。縮放只移除已知黑邊，不拉伸、不裁身體、不改 MediaCodec，不清除緩衝。既有保存檔與相簿仍顯示完整編碼畫布；此輪不重編舊影片。
+
 依使用者對修正版 3 的回饋，暖機保留轉圈圈和明確剩餘秒數，說明正在建立延遲畫面；倒數到 0 仍等待第一個延遲畫格，不能僅因計時結束宣告已就緒。狀態仍由 ViewModel 的 warmupRemainingSec／onRenderedFirstFrame 擁有。
 
 LivePracticeLayout 在寬大於高的可用區域讓影片占滿安全區內全部寬、高，取消上一版固定側欄。操作面板預設收起，由「操作」展開；面板覆蓋影片邊緣而不重新量測播放器尺寸，按「收起」或系統返回關閉。它是非模態面板，不鎖定焦點、不阻斷其他操作；展開／收起本身不保存、不改變錄影、不導頁。窄橫向亦適用，面板可捲動。直向保持既有上下配置。使用 FIT，不裁掉身體；來源比例不符螢幕時仍保留黑邊。
 
-左上錄影時間、停止／開始和整段保存結果不隨面板收起；單箭保存結果在左下共用 SaveStatusNotice 顯示，成功查看與失敗重試皆保留。LiveSaveActions 使用同一保存動作與禁用規則。橫直向即時小窗皆預設顯示，共用一次手動顯示選擇；旋轉不改變開關。暖機仍由同一 DelayWarmupIndicator 顯示，不省略秒數。LivePracticeUiTest 驗證完整寬高、面板開關及返回、短橫向捲動、1.5 倍字體、錄影停止與保存回饋、直向和暖機狀態。RotationContinuityTest 使用真正 MainActivity、CameraX 與編碼器，驗證橫向開啟、旋轉保留緩衝／錄影、小窗開關延續、錄影可解碼及真正切背景的重置。FrameCanvasTest 驗證尺寸改變仍完整呈現並清除殘影。
+左上錄影時間、停止／開始和整段保存結果不隨面板收起；單箭保存結果在小窗相反側共用 SaveStatusNotice 顯示，成功查看與失敗重試皆保留。LiveSaveActions 使用同一保存動作與禁用規則。橫直向即時小窗皆預設顯示，共用一次手動顯示選擇；旋轉不改變開關。暖機仍由同一 DelayWarmupIndicator 顯示，不省略秒數。LivePracticeUiTest 驗證完整寬高、面板開關及返回、短橫向捲動、1.5 倍字體、錄影停止與保存回饋、直向和暖機狀態。RotationContinuityTest 使用真正 MainActivity、CameraX 與編碼器，驗證橫向開啟、旋轉保留緩衝／錄影、小窗開關延續、錄影可解碼及真正切背景的重置。FrameCanvasTest 驗證尺寸改變仍完整呈現並清除殘影。
 
 ## Playback
 
