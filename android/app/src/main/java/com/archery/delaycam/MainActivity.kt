@@ -2,6 +2,11 @@ package com.archery.delaycam
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.content.res.Configuration
+import android.hardware.display.DisplayManager
+import android.os.Handler
+import android.os.Looper
+import android.view.Surface
 import android.os.Bundle
 import android.util.Log
 import android.view.WindowManager
@@ -39,14 +44,38 @@ class MainActivity : ComponentActivity() {
     private var cameraBound = false
     private var lastLoggedRotationDegrees = -1
     private var imageAnalysis: ImageAnalysis? = null
+    private val displayManager by lazy { getSystemService(DisplayManager::class.java) }
+    private val displayListener = object : DisplayManager.DisplayListener {
+        override fun onDisplayAdded(displayId: Int) = Unit
+        override fun onDisplayRemoved(displayId: Int) = Unit
+        override fun onDisplayChanged(displayId: Int) {
+            if (window.decorView.display?.displayId == displayId) updateCameraRotation()
+        }
+    }
+
+    private fun updateCameraRotation() {
+        val rotation = window.decorView.display?.rotation ?: Surface.ROTATION_0
+        imageAnalysis?.targetRotation = rotation
+        viewModel.previewUseCase.targetRotation = rotation
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        // Compose receives the new size; CameraX keeps its existing binding.
+        // The display callback also covers a 180-degree turn without a size change.
+        window.decorView.post { updateCameraRotation() }
+    }
 
     override fun onStart() {
         super.onStart()
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         viewModel.onAppForegrounded()
+        displayManager.registerDisplayListener(displayListener, Handler(Looper.getMainLooper()))
+        updateCameraRotation()
     }
 
     override fun onStop() {
+        displayManager.unregisterDisplayListener(displayListener)
         viewModel.onAppBackgrounded()
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         super.onStop()
@@ -99,6 +128,7 @@ class MainActivity : ComponentActivity() {
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                 .build()
             this.imageAnalysis = imageAnalysis
+            updateCameraRotation()
             // See ContinuousSegmentEncoder's doc comment for the two earlier
             // approaches that failed on-device (a second Preview use case
             // rejected at bind time; a hand-rolled YUV-buffer copy that

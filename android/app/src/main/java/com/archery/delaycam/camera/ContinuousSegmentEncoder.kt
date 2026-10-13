@@ -160,7 +160,7 @@ class ContinuousSegmentEncoder(
             Log.w(TAG, "lockHardwareCanvas blocked for ${lockMs}ms - encoder input surface backpressure")
         }
         try {
-            canvas.drawBitmap(bitmap, 0f, 0f, null)
+            drawFrameFit(canvas, bitmap)
         } finally {
             surface.unlockCanvasAndPost(canvas)
         }

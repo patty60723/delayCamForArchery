@@ -121,12 +121,14 @@ class MediaExportTest {
             store.acquire(listOf(segment))?.let { leases.add(it); segments.add(segment) }
         }, { stopped.countDown() }, immutableStore = store)
         val bitmap = android.graphics.Bitmap.createBitmap(320, 240, android.graphics.Bitmap.Config.ARGB_8888)
+        val portrait = android.graphics.Bitmap.createBitmap(240, 320, android.graphics.Bitmap.Config.ARGB_8888)
         encoder.setRingSize(2)
         try {
             val deadline = android.os.SystemClock.elapsedRealtime() + 7_000
             while (android.os.SystemClock.elapsedRealtime() < deadline) {
                 bitmap.eraseColor(android.graphics.Color.GREEN)
-                encoder.onFrame(bitmap)
+                portrait.eraseColor(android.graphics.Color.RED)
+                encoder.onFrame(if (deadline - android.os.SystemClock.elapsedRealtime() > 3_500) bitmap else portrait)
                 android.os.SystemClock.sleep(50)
             }
             encoder.stop()
@@ -139,6 +141,8 @@ class MediaExportTest {
                 val retriever = MediaMetadataRetriever()
                 try {
                     retriever.setDataSource(segment.file.absolutePath)
+                    assertEquals("320", retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH))
+                    assertEquals("240", retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT))
                     val actualDuration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)!!.toLong()
                     assertTrue("MP4 duration=$actualDuration must match seek duration=${segment.mediaDurationMs}",
                         kotlin.math.abs(actualDuration - segment.mediaDurationMs) <= 200L)
@@ -150,6 +154,7 @@ class MediaExportTest {
         } finally {
             encoder.stop()
             bitmap.recycle()
+            portrait.recycle()
             leases.forEach { it.close() }
             store.close()
         }

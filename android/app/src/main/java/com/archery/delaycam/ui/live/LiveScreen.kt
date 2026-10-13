@@ -32,8 +32,7 @@ fun LiveScreen(
     val state by viewModel.appState.collectAsState()
     val save by viewModel.clipSave.collectAsState()
     val mirrored by viewModel.mirrorVideo.collectAsState()
-    var portraitPreview by rememberSaveable { mutableStateOf(true) }
-    var landscapePreview by rememberSaveable { mutableStateOf(false) }
+    var showPreview by rememberSaveable { mutableStateOf(true) }
     var showHelp by remember { mutableStateOf(false) }
     DisposableEffect(onPreviewBounds) { onDispose { onPreviewBounds(null) } }
     val canSave = state == AppState.LIVE && warmup == null &&
@@ -67,7 +66,6 @@ fun LiveScreen(
                 DelayWarmupIndicator(remaining, settings.delaySec, Modifier.align(Alignment.Center))
             }
             val landscape = maxWidth > maxHeight
-            val showPreview = if (landscape) landscapePreview else portraitPreview
             val previewWidth = if (landscape) (maxHeight * 0.24f).coerceIn(64.dp, 96.dp)
                 else 96.dp
             val previewAlignment = if (landscape) Alignment.BottomEnd
@@ -83,14 +81,13 @@ fun LiveScreen(
             LaunchedEffect(showPreview) { if (!showPreview) onPreviewBounds(null) }
         } },
         controls = { sidePanel ->
-            val showPreview = if (sidePanel) landscapePreview else portraitPreview
             LiveSaveActions(canSave, sidePanel,
                 onSaveAndReview = { viewModel.triggerSave() },
                 onSaveOnly = { viewModel.triggerSave(playAfterSave = false) })
             Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp),
                 horizontalArrangement = Arrangement.SpaceBetween) {
                 TextButton(onClick = {
-                    if (sidePanel) landscapePreview = !landscapePreview else portraitPreview = !portraitPreview
+                    showPreview = !showPreview
                 }) {
                     Text(if (sidePanel) { if (showPreview) "收起即時" else "顯示即時" }
                         else { if (showPreview) "收起即時視窗" else "顯示即時視窗" })
