@@ -9,6 +9,7 @@ import android.net.Uri
 import android.provider.MediaStore
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.*
+import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
@@ -91,10 +92,20 @@ class ReplayReviewDeleteTest {
             compose.onNodeWithText("返回練習").assertIsDisplayed()
             compose.onNodeWithText("刪除單箭").assertIsDisplayed().assertIsEnabled()
             compose.runOnIdle { vm.updateSettings { it.copy(pictureMode = PictureMode.FIT) } }
+            runBlocking { withTimeout(5_000) { SettingsRepository(context).settingsFlow.first { it.pictureMode == PictureMode.FIT } } }
+            compose.waitUntil(5_000) { vm.settings.value.pictureMode == PictureMode.FIT }
+            val fitPixels = compose.onNodeWithTag("review-video").captureToImage().toPixelMap()
+            val fitEdge = fitPixels[20, fitPixels.height / 2]
+            assertTrue("FIT preserves side letterboxing for the 4:3 fixture", fitEdge.green < .2f)
             screenshot("replay-picture-fit")
             val replayItem = compose.runOnIdle { vm.replayPlayer.currentMediaItem }
             val generation = field(vm, "bufferGeneration")
             compose.runOnIdle { vm.updateSettings { it.copy(pictureMode = PictureMode.FILL) } }
+            runBlocking { withTimeout(5_000) { SettingsRepository(context).settingsFlow.first { it.pictureMode == PictureMode.FILL } } }
+            compose.waitUntil(5_000) { vm.settings.value.pictureMode == PictureMode.FILL }
+            val fillPixels = compose.onNodeWithTag("review-video").captureToImage().toPixelMap()
+            val fillEdge = fillPixels[20, fillPixels.height / 2]
+            assertTrue("FILL renders the green active picture at the viewport edge", fillEdge.green > .7f && fillEdge.red < .2f && fillEdge.blue < .3f)
             screenshot("replay-picture-fill")
             compose.runOnIdle {
                 assertSame(replayItem, vm.replayPlayer.currentMediaItem)
