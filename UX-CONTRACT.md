@@ -72,3 +72,7 @@ SegmentInfo.playbackItem 把有效影像比例傳到私有回放；匯出由 Cli
 ## Picture mode (0.2.8)
 
 使用者要求保留原比例並可自行選擇滿版。AppSettings.pictureMode / SettingsRepository 是持久化來源；PictureModeControl 使用可選語意按鈕；VideoPlayer / activePictureScale 是延遲、單箭回放與已保存播放器的共用縮放擁有者。FIT 預設，FILL 等比填滿並裁邊，設定說明只有觀看裁切、錄影仍完整。舊設定與未知值回 FIT；即時小窗保持完整構圖。變更不清空緩衝、不重建播放器／相機、不改 MediaStore 原片。ActivePictureFitTest 核对完整／滿版涵蓋範圍與比例；RotationContinuityTest 驗證設定持久化、實際 PlayerView 模式及相機／緩衝不中斷；ReplayReviewDeleteTest 保存完整比例，切換兩種模式但保留 MediaItem 與緩衝世代，並產出對照截圖。
+
+## LAN viewer prototype (not released)
+
+ViewerShareControls / DelayCamViewModel 擁有明確開始、忙碌、成功、本次連結、停止與失敗重試。LanViewerServer / ViewerSegmentSource 擁有只讀權限與來源 epoch，HTTP 請求持有不可覆寫片段 lease。本次 token 是暫時觀看授權，預設關閉、停止與背景撤銷，不提供永久配對或錄影控制。只接受區網／loopback，HTTP 明文只供自己的 Wi-Fi／熱點。瀏覽器 viewer.js 擁有點擊開始、暖機、網路失敗、接回來源、影片模式、非模態操作面板與 Escape 收起。未經三平台媒體驗證不能交付為正式串流；片段切換停頓必須揭露。

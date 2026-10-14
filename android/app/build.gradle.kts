@@ -19,8 +19,8 @@ android {
         minSdk = 29
         targetSdk = 34
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        versionCode = 11
-        versionName = "0.2.8"
+        versionCode = 12
+        versionName = "0.3.0"
         buildConfigField("boolean", "FAST_RESUME_TRIAL", fastResumeTrial.toString())
         manifestPlaceholders["appIcon"] = if (fastResumeTrial) "@mipmap/ic_launcher_test" else "@mipmap/ic_launcher"
         manifestPlaceholders["appLabel"] = if (fastResumeTrial) "測試${versionCode}·箭影" else "@string/app_name"
@@ -103,6 +103,7 @@ dependencies {
 
     // --- Settings persistence (spec 4) ---
     implementation("androidx.datastore:datastore-preferences:1.1.1")
+    implementation("com.google.zxing:core:3.5.3")
 
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")

@@ -88,7 +88,11 @@ class RotationContinuityTest {
                     assertEquals(beforeModeSession, vm.cameraSessionForFrame())
                     assertEquals(beforeModeGeneration, field(vm, "bufferGeneration"))
                     assertSame(beforeModeEncoder, field(vm, "segmentEncoder"))
+                    vm.startViewerShare()
                 }
+                compose.waitUntil(10_000) { vm.viewerShare.value.running }
+                assertTrue(vm.viewerShare.value.links.isNotEmpty())
+                val shareLinks = vm.viewerShare.value.links
                 val session = vm.cameraSessionForFrame()
                 val generation = field(vm, "bufferGeneration")
                 val encoder = field(vm, "segmentEncoder")
@@ -126,6 +130,7 @@ class RotationContinuityTest {
                         assertEquals(session, vm.cameraSessionForFrame())
                         assertEquals("Rotation must not clear delay history", generation, field(vm, "bufferGeneration"))
                         assertSame("Keep the same encoder", encoder, field(vm, "segmentEncoder"))
+                        assertEquals("Share server survives rotation", shareLinks, vm.viewerShare.value.links)
                         assertNull("No new warmup after rotation", vm.warmupRemainingSec.value)
                         assertEquals(RecordingPhase.RECORDING, vm.recordingPhase.value)
                     }
@@ -172,6 +177,8 @@ class RotationContinuityTest {
                 // Genuine backgrounding must still discard old footage on return.
                 scenario.moveToState(Lifecycle.State.CREATED)
                 assertNull(vm.cameraSessionForFrame())
+                assertFalse("Backgrounding revokes the viewer session", vm.viewerShare.value.running)
+                assertTrue(vm.viewerShare.value.links.isEmpty())
                 scenario.moveToState(Lifecycle.State.RESUMED)
                 compose.waitUntil(10_000) { vm.cameraSessionForFrame() != null }
                 assertNotEquals(session, vm.cameraSessionForFrame())

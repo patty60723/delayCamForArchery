@@ -81,6 +81,65 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
     private val _settings = MutableStateFlow(AppSettings())
     val settings: StateFlow<AppSettings> = _settings.asStateFlow()
 
+    private val viewerSource = com.archery.delaycam.viewer.ViewerSegmentSource()
+    private var viewerServer: com.archery.delaycam.viewer.LanViewerServer? = null
+    private var viewerGeneration = 0L
+    private val _viewerShare = MutableStateFlow(ViewerShareState())
+    val viewerShare: StateFlow<ViewerShareState> = _viewerShare.asStateFlow()
+
+    data class ViewerShareState(val running: Boolean = false, val busy: Boolean = false,
+        val links: List<String> = emptyList(), val error: String? = null)
+
+    fun startViewerShare() {
+        if (!BuildConfig.FAST_RESUME_TRIAL || _viewerShare.value.running || _viewerShare.value.busy) return
+        val generation = ++viewerGeneration
+        _viewerShare.value = ViewerShareState(busy = true)
+        viewerSource.reset()
+        viewerSource.update(captureSession.sessionForFrame() != null, settings.value.delaySec, settings.value.pictureMode)
+        immutableStore?.let { store ->
+            segmentBuffer.segmentsCoveringRange(0, System.currentTimeMillis()).forEach { viewerSource.publish(it, store) }
+        }
+        viewModelScope.launch {
+            var pending: com.archery.delaycam.viewer.LanViewerServer? = null
+            try {
+                val links = withContext(Dispatchers.IO) {
+                    val app = getApplication<Application>()
+                    val server = com.archery.delaycam.viewer.LanViewerServer(viewerSource,
+                        { name -> app.assets.open("viewer/$name").use { it.readBytes() } })
+                    pending = server
+                    viewerAddresses().map(server::url)
+                }
+                if (generation != viewerGeneration) return@launch
+                viewerServer = pending; pending = null
+                _viewerShare.value = ViewerShareState(running = true, links = links)
+            } catch (e: Exception) {
+                if (generation == viewerGeneration) _viewerShare.value = ViewerShareState(error = "無法開始分享，請稍後重試。")
+                Log.w(TAG, "Viewer server start failed", e)
+            } finally { pending?.close() }
+        }
+    }
+
+    fun refreshViewerLinks() {
+        val server = viewerServer ?: return
+        viewModelScope.launch {
+            val links = withContext(Dispatchers.IO) { viewerAddresses().map(server::url) }
+            if (server === viewerServer) _viewerShare.value = _viewerShare.value.copy(links = links)
+        }
+    }
+
+    private fun viewerAddresses(): List<String> = runCatching { java.net.NetworkInterface.getNetworkInterfaces()
+        ?.toList().orEmpty().filter { it.isUp && !it.isLoopback &&
+            !it.name.startsWith("rmnet") && !it.name.startsWith("tun") }
+        .flatMap { it.inetAddresses.toList() }.filterIsInstance<java.net.Inet4Address>()
+        .filter { it.isSiteLocalAddress }.mapNotNull { it.hostAddress }.distinct() }.getOrDefault(emptyList())
+
+    fun stopViewerShare() {
+        viewerGeneration++
+        viewerServer?.close(); viewerServer = null
+        viewerSource.reset()
+        _viewerShare.value = ViewerShareState()
+    }
+
     private val _appState = MutableStateFlow(AppState.LIVE)
     val appState: StateFlow<AppState> = _appState.asStateFlow()
 
@@ -328,6 +387,7 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
     fun onAppBackgrounded() {
         val endingSessionId = captureSession.sessionForFrame()
         if (!captureSession.endForeground()) return
+        stopViewerShare()
         gestureEngine.setScene(GestureScene.DISABLED)
         replayReturnPolicy.suspend()
         _replayReturnRemainingSec.value = null
@@ -402,6 +462,7 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
     fun updateSettings(update: (AppSettings) -> AppSettings) {
         val next = update(_settings.value)
         _settings.value = next
+        viewerSource.update(captureSession.sessionForFrame() != null, next.delaySec, next.pictureMode)
         applyBufferWindow(next)
         viewModelScope.launch { settingsRepository.save(next) }
     }
@@ -422,6 +483,10 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
 
     private fun onSegmentFinalized(segment: SegmentInfo, store: ImmutableSegmentStore? = immutableStore) {
         segmentBuffer.push(segment)
+        if ((_viewerShare.value.running || _viewerShare.value.busy) && store != null) {
+            viewerSource.update(true, settings.value.delaySec, settings.value.pictureMode)
+            viewerSource.publish(segment, store)
+        }
         if (_appState.value != AppState.REPLAY) {
             if (!delayedPlayback.onSegmentFinalized(segment, store)) {
                 Log.w(TAG, "delay source discontinuity: falling back to warmup")
@@ -904,6 +969,7 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
     }
 
     override fun onCleared() {
+        stopViewerShare()
         captureSession.close()
         cameraAnalysisExecutor.execute {
             stopSegmentEncoder()

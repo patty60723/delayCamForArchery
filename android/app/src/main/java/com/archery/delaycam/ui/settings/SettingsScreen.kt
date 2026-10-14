@@ -118,6 +118,7 @@ fun SettingsScreen(viewModel: DelayCamViewModel, onBack: () -> Unit) {
                 ) { Text(label) }
             }
         }
+        if (BuildConfig.FAST_RESUME_TRIAL) com.archery.delaycam.ui.components.ViewerShareControls(viewModel)
         Text("箭影 · " + (if (BuildConfig.FAST_RESUME_TRIAL) "測試版 " else "一般版 ") +
             BuildConfig.VERSION_NAME + " (" + BuildConfig.VERSION_CODE + ")",
             color = Color(0xFF9AA1AB), modifier = Modifier.padding(top = 24.dp))
