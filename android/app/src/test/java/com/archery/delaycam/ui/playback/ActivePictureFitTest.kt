@@ -2,8 +2,23 @@ package com.archery.delaycam.ui.playback
 
 import org.junit.Assert.*
 import org.junit.Test
+import com.archery.delaycam.settings.PictureMode
 
 class ActivePictureFitTest {
+    @Test fun fillCoversBothAxesWithoutDistortingThePicture() {
+        for (width in listOf(300f, 1200f)) for (height in listOf(220f, 800f)) {
+            for (encoded in listOf(.75f, 4f / 3f)) for (content in listOf(null, .75f, 4f / 3f)) {
+                val scale = activePictureScale(width, height, encoded, content, PictureMode.FILL)
+                val aspect = content ?: encoded
+                val fw = minOf(width, height * encoded)
+                val pw = fw * minOf(1f, aspect / encoded) * scale
+                val ph = fw / encoded * minOf(1f, encoded / aspect) * scale
+                assertTrue(pw >= width - .01f && ph >= height - .01f)
+                assertTrue(kotlin.math.abs(pw - width) < .01f || kotlin.math.abs(ph - height) < .01f)
+                assertEquals(aspect, pw / ph, .001f)
+            }
+        }
+    }
     @Test fun portraitEncodedLandscapePictureUsesFullAvailableHeight() {
         // The user's screenshot: 4:3 footage letterboxed inside a 3:4 encoded frame.
         val scale = activePictureScale(1200f, 500f, 0.75f, 4f / 3f)

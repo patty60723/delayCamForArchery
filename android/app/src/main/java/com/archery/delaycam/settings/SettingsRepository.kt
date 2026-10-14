@@ -23,10 +23,12 @@ class SettingsRepository(private val context: Context) {
         val SLOW_MO_RATE = floatPreferencesKey("slowMoRate")
         val PREVIEW_CORNER = stringPreferencesKey("previewCorner")
         val DOMINANT_HAND = stringPreferencesKey("dominantHand")
+        val PICTURE_MODE = stringPreferencesKey("pictureMode")
     }
 
     val settingsFlow: Flow<AppSettings> = context.settingsDataStore.data.map { prefs ->
         AppSettings(
+            pictureMode = if (prefs[Keys.PICTURE_MODE] == "FILL") PictureMode.FILL else PictureMode.FIT,
             delaySec = prefs[Keys.DELAY_SEC] ?: 5,
             backtrackSec = prefs[Keys.BACKTRACK_SEC] ?: 8,
             guideVertical = prefs[Keys.GUIDE_V] ?: true,
@@ -54,6 +56,7 @@ class SettingsRepository(private val context: Context) {
             prefs[Keys.SLOW_MO_RATE] = settings.slowMoRate
             prefs[Keys.PREVIEW_CORNER] = settings.previewCorner.name
             prefs[Keys.DOMINANT_HAND] = settings.dominantHand.name
+            prefs[Keys.PICTURE_MODE] = settings.pictureMode.name
         }
     }
 }

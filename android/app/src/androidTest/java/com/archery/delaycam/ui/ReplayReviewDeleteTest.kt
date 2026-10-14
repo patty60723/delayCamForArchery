@@ -17,6 +17,7 @@ import com.archery.delaycam.camera.*
 import com.archery.delaycam.gallery.ClipPresentationStore
 import com.archery.delaycam.gallery.GalleryRepository
 import com.archery.delaycam.settings.SettingsRepository
+import com.archery.delaycam.settings.PictureMode
 import com.archery.delaycam.state.AppState
 import com.archery.delaycam.state.SavePhase
 import com.archery.delaycam.ui.playback.CONTENT_ASPECT_KEY
@@ -89,6 +90,17 @@ class ReplayReviewDeleteTest {
             assertEquals(layout.height, video.height, 2f)
             compose.onNodeWithText("返回練習").assertIsDisplayed()
             compose.onNodeWithText("刪除單箭").assertIsDisplayed().assertIsEnabled()
+            compose.runOnIdle { vm.updateSettings { it.copy(pictureMode = PictureMode.FIT) } }
+            screenshot("replay-picture-fit")
+            val replayItem = vm.replayPlayer.currentMediaItem
+            val generation = field(vm, "bufferGeneration")
+            compose.runOnIdle { vm.updateSettings { it.copy(pictureMode = PictureMode.FILL) } }
+            screenshot("replay-picture-fill")
+            compose.runOnIdle {
+                assertSame(replayItem, vm.replayPlayer.currentMediaItem)
+                assertEquals(generation, field(vm, "bufferGeneration"))
+            }
+            compose.runOnIdle { vm.updateSettings { it.copy(pictureMode = loaded.pictureMode) } }
             android.util.Log.i("ReplayDeleteTest", "Testing panel")
             compose.onNodeWithContentDescription("顯示播放操作").performClick()
             compose.onNodeWithText("0.25×").performScrollTo().assertIsDisplayed()
@@ -114,6 +126,7 @@ class ReplayReviewDeleteTest {
             uri?.let { runCatching { context.contentResolver.delete(it, null, null) } }
             compose.runOnUiThread { owner.clear(); context.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT }
             store.close()
+            runBlocking { SettingsRepository(context).save(loaded) }
         }
     }
 

@@ -78,8 +78,8 @@ jobs:
           from pathlib import Path
           metadata = Path('app/build/apk-metadata.txt').read_text()
           assert "name='com.archery.delaycam.fastresume'" in metadata
-          assert "versionName='0.2.7-fast-return-test'" in metadata
-          assert "application-label:'測試10·箭影'" in metadata
+          assert "versionName='0.2.8-fast-return-test'" in metadata
+          assert "application-label:'測試11·箭影'" in metadata
           print('COEXISTENCE_APK_IDENTITY_OK')
           PYMETA
           sha256sum app/build/outputs/apk/debug/app-debug.apk

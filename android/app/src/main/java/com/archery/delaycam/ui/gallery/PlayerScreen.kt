@@ -44,7 +44,7 @@ fun PlayerScreen(viewModel: DelayCamViewModel, clipUri: String, clipName: String
         onDispose { player.release() }
     }
     MediaReviewLayout(
-        video = { modifier -> VideoPlayer(player, mirrored, modifier, contentAspectOverride = contentAspect) },
+        video = { modifier -> VideoPlayer(player, mirrored, modifier, contentAspectOverride = contentAspect, pictureMode = settings.pictureMode) },
         header = { Text("已保存影片", Modifier.padding(12.dp), style = MaterialTheme.typography.titleSmall) },
         controls = {
             PlaybackControls(player, mirrored, viewModel::setMirrorVideo,

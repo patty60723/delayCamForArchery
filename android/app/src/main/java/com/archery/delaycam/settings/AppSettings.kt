@@ -9,6 +9,7 @@ data class AppSettings(
     val slowMoRate: Float = 0.5f,
     val previewCorner: PreviewCorner = PreviewCorner.BOTTOM_RIGHT,
     val dominantHand: DominantHand = DominantHand.RIGHT,
+    val pictureMode: PictureMode = PictureMode.FIT,
 ) {
     companion object {
         val DELAY_RANGE = 1..30
@@ -21,3 +22,6 @@ enum class DominantHand { LEFT, RIGHT }
 
 
 enum class PreviewCorner { BOTTOM_LEFT, BOTTOM_RIGHT }
+
+/** Display only: exported footage always retains the complete captured picture. */
+enum class PictureMode { FIT, FILL }

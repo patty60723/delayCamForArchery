@@ -22,9 +22,11 @@ import androidx.media3.common.Player
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.archery.delaycam.R
+import com.archery.delaycam.settings.PictureMode
 
 @Composable
-fun VideoPlayer(player: Player, mirrored: Boolean, modifier: Modifier = Modifier, fitActivePicture: Boolean = false, contentAspectOverride: Float? = null) {
+fun VideoPlayer(player: Player, mirrored: Boolean, modifier: Modifier = Modifier, fitActivePicture: Boolean = false,
+    contentAspectOverride: Float? = null, pictureMode: PictureMode = PictureMode.FIT) {
     var videoSize by remember(player) { mutableStateOf(player.videoSize) }
     var contentAspect by remember(player) { mutableStateOf<Float?>(null) }
     DisposableEffect(player, fitActivePicture) {
@@ -43,7 +45,7 @@ fun VideoPlayer(player: Player, mirrored: Boolean, modifier: Modifier = Modifier
     BoxWithConstraints(modifier.clipToBounds()) {
         val encodedAspect = if (videoSize.height > 0)
             videoSize.width * videoSize.pixelWidthHeightRatio / videoSize.height else 0f
-        val scale = activePictureScale(maxWidth.value, maxHeight.value, encodedAspect, contentAspectOverride ?: contentAspect)
+        val scale = activePictureScale(maxWidth.value, maxHeight.value, encodedAspect, contentAspectOverride ?: contentAspect, pictureMode)
         AndroidView(
             factory = { context ->
                 (LayoutInflater.from(context).inflate(R.layout.player_view_texture, null) as PlayerView).apply {
@@ -53,7 +55,7 @@ fun VideoPlayer(player: Player, mirrored: Boolean, modifier: Modifier = Modifier
                     tag = "archery-video-player"
                 }
             },
-            update = { it.player = player },
+            update = { it.player = player; it.setTag(R.id.picture_mode, pictureMode.name) },
             modifier = Modifier.fillMaxSize().graphicsLayer {
                 scaleX = if (mirrored) -scale else scale
                 scaleY = scale

@@ -19,6 +19,8 @@ import androidx.test.core.app.ActivityScenario
 import androidx.test.platform.app.InstrumentationRegistry
 import com.archery.delaycam.settings.SettingsRepository
 import com.archery.delaycam.settings.PreviewCorner
+import com.archery.delaycam.settings.PictureMode
+import com.archery.delaycam.R
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.flow.first
 import com.archery.delaycam.MainActivity
@@ -63,6 +65,11 @@ class RotationContinuityTest {
                 compose.waitUntil(45_000) { vm.warmupRemainingSec.value == null && vm.cameraSessionForFrame() != null }
                 compose.onNodeWithContentDescription("顯示操作").performClick()
                 compose.onNodeWithText("設定").performClick()
+                val beforeModeSession = vm.cameraSessionForFrame()
+                val beforeModeGeneration = field(vm, "bufferGeneration")
+                val beforeModeEncoder = field(vm, "segmentEncoder")
+                compose.onNodeWithText("滿版").performScrollTo().performClick().assertIsSelected()
+                runBlocking { repository.settingsFlow.first { it.pictureMode == PictureMode.FILL } }
                 compose.onNodeWithText("左下").performScrollTo().performClick().assertIsSelected()
                 runBlocking { repository.settingsFlow.first { it.previewCorner == PreviewCorner.BOTTOM_LEFT } }
                 compose.onNodeWithText("右下").performClick().assertIsSelected()
@@ -75,6 +82,13 @@ class RotationContinuityTest {
                 val screenBounds = compose.onNodeWithTag("practice-layout").fetchSemanticsNode().boundsInRoot
                 assertTrue("Left corner setting places PiP on the left", previewBounds.center.x < screenBounds.center.x)
                 assertTrue("Landscape PiP is larger than the old 96 dp cap", previewBounds.width / activity.resources.displayMetrics.density > 96f)
+                scenario.onActivity {
+                    val video = it.window.decorView.findViewWithTag<android.view.View>("archery-video-player")
+                    assertEquals("FILL", video.getTag(R.id.picture_mode))
+                    assertEquals(beforeModeSession, vm.cameraSessionForFrame())
+                    assertEquals(beforeModeGeneration, field(vm, "bufferGeneration"))
+                    assertSame(beforeModeEncoder, field(vm, "segmentEncoder"))
+                }
                 val session = vm.cameraSessionForFrame()
                 val generation = field(vm, "bufferGeneration")
                 val encoder = field(vm, "segmentEncoder")

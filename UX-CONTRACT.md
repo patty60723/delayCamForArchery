@@ -68,3 +68,7 @@ JVM 測試驗證生命週期、片段時間、跨片段定位和手勢；模擬�
 MediaReviewLayout 擁有回放／已保存影片的橫向滿版、可收起浮動操作與始終可達的返回；控制展開取消回放自動返回，不變更播放器尺寸。RecordingScreenLayout 的 compact 政策同樣用於橫向回放與已保存播放器。SaveStatusNotice 的 trailingAction 變體提供回放「刪除單箭」。DeleteClipAction 共用確認／保留、忙碌禁用、持續錯誤及重試；成功核對 MediaStore 後清除對應保存結果、更新相簿並返回。回放刪除取消自動返回倒數；保留不刪、不跳頁。Android 需要額外刪除授權時由系统 IntentSender 流程處理，取消保留影片。
 
 SegmentInfo.playbackItem 把有效影像比例傳到私有回放；匯出由 ClipPresentationStore 保存精確時間範圍與比例，已存影片的 PlayerScreen 跟隨位置放大。混合／未知片段不裁畫布，舊影片沒有比例資料時仍完整 FIT。刪除影片一併清理其展示 metadata。ReplayReviewDeleteTest 驗證真的存檔、回放元資料、滿版／面板不改尺寸、確認保留／刪除，以及 MediaStore 和相簿結果；ClipPresentationTest 驗證匯出時間／混合比例與刪除清理。
+
+## Picture mode (0.2.8)
+
+使用者要求保留原比例並可自行選擇滿版。AppSettings.pictureMode / SettingsRepository 是持久化來源；PictureModeControl 使用可選語意按鈕；VideoPlayer / activePictureScale 是延遲、單箭回放與已保存播放器的共用縮放擁有者。FIT 預設，FILL 等比填滿並裁邊，設定說明只有觀看裁切、錄影仍完整。舊設定與未知值回 FIT；即時小窗保持完整構圖。變更不清空緩衝、不重建播放器／相機、不改 MediaStore 原片。ActivePictureFitTest 核对完整／滿版涵蓋範圍與比例；RotationContinuityTest 驗證設定持久化、實際 PlayerView 模式及相機／緩衝不中斷；ReplayReviewDeleteTest 保存完整比例，切換兩種模式但保留 MediaItem 與緩衝世代，並產出對照截圖。

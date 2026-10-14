@@ -14,13 +14,14 @@ import com.archery.delaycam.ui.playback.*
 
 @Composable
 fun ReplayScreen(viewModel: DelayCamViewModel, onOpenSavedClip: (Uri, String) -> Unit) {
+    val settings by viewModel.settings.collectAsState()
     val save by viewModel.clipSave.collectAsState()
     val mirrored by viewModel.mirrorVideo.collectAsState()
     val remaining by viewModel.replayReturnRemainingSec.collectAsState()
     var help by remember { mutableStateOf(false) }
     BackHandler { viewModel.skipReplay() }
     MediaReviewLayout(
-        video = { modifier -> VideoPlayer(viewModel.replayPlayer, mirrored, modifier, fitActivePicture = true) },
+        video = { modifier -> VideoPlayer(viewModel.replayPlayer, mirrored, modifier, fitActivePicture = true, pictureMode = settings.pictureMode) },
         header = {
             Column {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp),

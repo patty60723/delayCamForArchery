@@ -61,7 +61,7 @@ fun LiveScreen(
             if (!sidePanel) SaveStatusNotice(save, viewModel::retryClipSave, onOpenSavedClip)
         },
         video = { videoModifier -> BoxWithConstraints(videoModifier) {
-            VideoPlayer(viewModel.livePlayer, mirrored, Modifier.fillMaxSize(), fitActivePicture = true)
+            VideoPlayer(viewModel.livePlayer, mirrored, Modifier.fillMaxSize(), fitActivePicture = true, pictureMode = settings.pictureMode)
             GuideOverlay(settings.guideVertical, settings.guideHorizontal, Modifier.fillMaxSize())
             warmup?.let { remaining ->
                 DelayWarmupIndicator(remaining, settings.delaySec, Modifier.align(Alignment.Center))

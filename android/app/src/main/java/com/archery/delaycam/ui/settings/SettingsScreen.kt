@@ -73,6 +73,10 @@ fun SettingsScreen(viewModel: DelayCamViewModel, onBack: () -> Unit) {
             onCheckedChange = { v -> viewModel.updateSettings { it.copy(guideHorizontal = v) } },
         )
 
+        com.archery.delaycam.ui.components.PictureModeControl(settings.pictureMode) { mode ->
+            viewModel.updateSettings { it.copy(pictureMode = mode) }
+        }
+
         Text("慢動作回放速度", color = Color.White, modifier = Modifier.padding(top = 16.dp))
         Row(modifier = Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             AppSettings.SLOW_MO_OPTIONS.forEach { rate ->
