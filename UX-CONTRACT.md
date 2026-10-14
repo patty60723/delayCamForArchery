@@ -7,7 +7,7 @@
 | Capability | Canonical owner | Source of truth | Allowed variants | Verification |
 | --- | --- | --- | --- | --- |
 | Toast | DelayCamNavHost / RecordingControls / SaveStatusNotice | 本文件 Feedback | 一般短提示；保存狀態持續顯示 | RecordingPlaybackUiTest |
-| CRUD | DelayCamViewModel / PlayerScreen | 本文件 Playback | 手動開啟保存結果；刪除確認 | RecordingPlaybackUiTest / 裝置驗收 |
+| CRUD | DelayCamViewModel / DeleteClipAction | 本文件 Playback | 手動開啟保存結果；回放／已存影片共用刪除確認 | ReplayReviewDeleteTest / RecordingPlaybackUiTest / 裝置驗收 |
 | Recording | RecordingScreenLayout / RecordingControls | 本文件 Recording | 一般頂部列；橫向練習浮動 compact 版本，共用狀態與按鈕規則 | RecordingPlaybackUiTest / LivePracticeUiTest |
 | Practice controls | LivePracticeLayout / LiveSaveActions | 本文件 Practice Layout and Warmup | 直向下方；橫向非模態可收起面板 | LivePracticeUiTest |
 
@@ -62,3 +62,9 @@ SAVING／SAVED／FAILED 分別呈現；MediaStore 完成後才能顯示已保存
 Material 語意按鈕、繁中標籤、48 dp 操作下限、系統安全區、可捲動控制區和非拖曳時間軸替代操作。錄影時間不以 live-region 每秒播報，保存狀態使用 polite live-region。
 
 JVM 測試驗證生命週期、片段時間、跨片段定位和手勢；模擬器測試驗證按鈕、忙碌、保存成功／失敗與直接播放控制。LiveCameraPreviewTest 另以模擬器前鏡頭確認預設隱藏小窗仍有 ImageAnalysis 畫格，開關小窗保持同一 PreviewView 並持續收到畫格。這項測試不等同延遲編碼與完整實機驗收。實際 Pixel 長時間錄影、CameraX／編碼器、日照、護具、觀看距離與完整大字／TalkBack 流程仍需裝置驗收。
+
+## Replay review and shot deletion (0.2.7)
+
+MediaReviewLayout 擁有回放／已保存影片的橫向滿版、可收起浮動操作與始終可達的返回；控制展開取消回放自動返回，不變更播放器尺寸。RecordingScreenLayout 的 compact 政策同樣用於橫向回放與已保存播放器。SaveStatusNotice 的 trailingAction 變體提供回放「刪除單箭」。DeleteClipAction 共用確認／保留、忙碌禁用、持續錯誤及重試；成功核對 MediaStore 後清除對應保存結果、更新相簿並返回。回放刪除取消自動返回倒數；保留不刪、不跳頁。Android 需要額外刪除授權時由系统 IntentSender 流程處理，取消保留影片。
+
+SegmentInfo.playbackItem 把有效影像比例傳到私有回放；匯出由 ClipPresentationStore 保存精確時間範圍與比例，已存影片的 PlayerScreen 跟隨位置放大。混合／未知片段不裁畫布，舊影片沒有比例資料時仍完整 FIT。刪除影片一併清理其展示 metadata。ReplayReviewDeleteTest 驗證真的存檔、回放元資料、滿版／面板不改尺寸、確認保留／刪除，以及 MediaStore 和相簿結果；ClipPresentationTest 驗證匯出時間／混合比例與刪除清理。

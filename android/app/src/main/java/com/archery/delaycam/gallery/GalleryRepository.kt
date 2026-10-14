@@ -50,8 +50,20 @@ class GalleryRepository(private val context: Context) {
         entries
     }
 
+    suspend fun clipExists(uri: Uri): Boolean = withContext(Dispatchers.IO) {
+        context.contentResolver.query(uri, arrayOf(MediaStore.Video.Media._ID), null, null, null)?.use { it.moveToFirst() }
+            ?: throw java.io.IOException("Cannot verify the video")
+    }
+
     suspend fun deleteClip(uri: Uri) = withContext(Dispatchers.IO) {
-        context.contentResolver.delete(uri, null, null)
+        val deleted = context.contentResolver.delete(uri, null, null)
+        if (deleted == 0) {
+            context.contentResolver.query(uri, arrayOf(MediaStore.Video.Media._ID), null, null, null)?.use {
+                if (it.moveToFirst()) throw java.io.IOException("MediaStore did not delete the video")
+            } ?: throw java.io.IOException("Cannot verify deletion")
+        }
+        ClipPresentationStore(context).remove(uri)
         Unit
     }
 }
+

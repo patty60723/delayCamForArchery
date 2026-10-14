@@ -39,11 +39,7 @@ class DelayedPlaybackController(
     }
 
     private fun id(segment: SegmentInfo) = "${segment.file.absolutePath}:${segment.startedAtMs}:${segment.endedAtMs}"
-    private fun item(segment: SegmentInfo) = MediaItem.Builder()
-        .setUri(segment.file.toUri()).setMediaId(id(segment))
-        .setMediaMetadata(MediaMetadata.Builder().setExtras(Bundle().apply {
-            segment.contentAspectRatio?.let { putFloat(CONTENT_ASPECT_KEY, it) }
-        }).build()).build()
+    private fun item(segment: SegmentInfo) = segment.playbackItem(id(segment))
 
     /** Called on main. New playlist owns a lease before any old queue is discarded. */
     fun resume(plan: FastResumePlan, store: ImmutableSegmentStore): Boolean {

@@ -1,6 +1,8 @@
 package com.archery.delaycam.camera
 
 import android.content.Context
+import com.archery.delaycam.gallery.ClipPresentationStore
+import com.archery.delaycam.gallery.PictureRange
 import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaMuxer
@@ -31,14 +33,18 @@ object ClipExporter {
         require(segments.isNotEmpty()) { "no segments to export" }
         val tempFile = File.createTempFile("archery_export", ".mp4", context.cacheDir)
         try {
-            concatenate(segments.map { it.file }, tempFile)
-            MediaStoreExport.saveVideoToMediaStore(context, tempFile, displayName)
+            val ranges = concatenate(segments, tempFile)
+            val uri = MediaStoreExport.saveVideoToMediaStore(context, tempFile, displayName)
+            try { ClipPresentationStore(context).write(uri, ranges) }
+            catch (failure: Exception) { android.util.Log.w("ClipExporter", "Presentation metadata unavailable", failure) }
+            uri
         } finally {
             tempFile.delete()
         }
     }
 
-    private fun concatenate(inputs: List<File>, output: File) {
+    private fun concatenate(inputs: List<SegmentInfo>, output: File): List<PictureRange> {
+        val ranges = mutableListOf<PictureRange>()
         val muxer = MediaMuxer(output.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
         val bufferInfo = MediaCodec.BufferInfo()
         val buffer = ByteBuffer.allocate(1 shl 20) // 1MB, generous for one segment's worth of samples
@@ -51,7 +57,7 @@ object ClipExporter {
         for (input in inputs) {
             val extractor = MediaExtractor()
             try {
-                extractor.setDataSource(input.absolutePath)
+                extractor.setDataSource(input.file.absolutePath)
                 val trackIndex = MediaStoreExport.selectVideoTrack(extractor)
                     ?: throw IOException("影片片段沒有可讀取的影像")
                 extractor.selectTrack(trackIndex)
@@ -76,6 +82,7 @@ object ClipExporter {
                 }
                 // next segment's samples continue after this one's last timestamp
                 timeline.endSegment()
+                ranges.add(PictureRange(timeline.durationUs / 1000L, input.contentAspectRatio))
             } finally {
                 extractor.release()
             }
@@ -86,6 +93,7 @@ object ClipExporter {
         } finally {
             muxer.release()
         }
+        return ranges
     }
 }
 

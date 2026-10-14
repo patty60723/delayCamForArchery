@@ -14,7 +14,7 @@ class BrandIdentityTest {
     @Test fun testAppHasShortDistinctLabelAndAdaptiveIcon() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val manager = context.packageManager
-        assertEquals(if (BuildConfig.FAST_RESUME_TRIAL) "測試9·箭影" else "箭影", manager.getApplicationLabel(context.applicationInfo).toString())
+        assertEquals(if (BuildConfig.FAST_RESUME_TRIAL) "測試${BuildConfig.VERSION_CODE}·箭影" else "箭影", manager.getApplicationLabel(context.applicationInfo).toString())
         val icon = manager.getApplicationIcon(context.applicationInfo)
         val bitmap = Bitmap.createBitmap(432, 432, Bitmap.Config.ARGB_8888)
         icon.setBounds(0, 0, 432, 432)

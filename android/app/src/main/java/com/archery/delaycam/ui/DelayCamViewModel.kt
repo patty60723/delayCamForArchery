@@ -1,5 +1,6 @@
 package com.archery.delaycam.ui
 
+import com.archery.delaycam.camera.playbackItem
 import android.app.Application
 import android.graphics.Bitmap
 import android.os.SystemClock
@@ -70,6 +71,8 @@ private const val STALL_THRESHOLD_MS = 3000L
  * live mirror + replay), the gesture engine, and the LIVE/SAVING/REPLAY
  * state machine (spec 2.2: new triggers are ignored outside LIVE).
  */
+data class ClipDeletionState(val uri: android.net.Uri? = null, val busy: Boolean = false, val error: String? = null)
+
 class DelayCamViewModel(application: Application) : AndroidViewModel(application) {
 
     private val settingsRepository = SettingsRepository(application)
@@ -113,6 +116,13 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
     val recordingPhase: StateFlow<RecordingPhase> = _recordingPhase.asStateFlow()
     private val _recordingSave = MutableStateFlow(SaveStatus())
     val recordingSave: StateFlow<SaveStatus> = _recordingSave.asStateFlow()
+    private data class PendingDeletion(val uri: android.net.Uri, val onDeleted: () -> Unit, val retry: Boolean)
+    private var pendingDeletion: PendingDeletion? = null
+    private val _deleteApproval = MutableStateFlow<android.content.IntentSender?>(null)
+    val deleteApproval: StateFlow<android.content.IntentSender?> = _deleteApproval.asStateFlow()
+    private val _clipDeletion = MutableStateFlow(ClipDeletionState())
+    val clipDeletion: StateFlow<ClipDeletionState> = _clipDeletion.asStateFlow()
+
     private val _clipSave = MutableStateFlow(SaveStatus())
     val clipSave: StateFlow<SaveStatus> = _clipSave.asStateFlow()
     private val _mirrorVideo = MutableStateFlow(true)
@@ -733,7 +743,7 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
                     replayReturnPolicy.begin()
                     replayPlayer.stop()
                     replayPlayer.clearMediaItems()
-                    copied.segments.forEach { replayPlayer.addMediaItem(MediaItem.fromUri(it.file.toUri())) }
+                    copied.segments.forEach { replayPlayer.addMediaItem(it.playbackItem()) }
                     replayPlayer.playbackParameters = PlaybackParameters(currentSettings.slowMoRate)
                     replayPlayer.prepare()
                     replayPlayer.playWhenReady = true
@@ -838,14 +848,53 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun deleteClip(uri: android.net.Uri, onDeleted: () -> Unit = {}) {
+        if (_clipDeletion.value.busy) return
+        _clipDeletion.value = ClipDeletionState(uri, busy = true)
         viewModelScope.launch {
             try {
                 galleryRepository.deleteClip(uri)
-                refreshGallery()
-                onDeleted()
+                completeClipDeletion(uri, onDeleted)
             } catch (e: Exception) {
                 Log.e(TAG, "delete clip failed", e)
-                _toast.value = "影片未能刪除，請稍後再試"
+                val approval = try {
+                    if (e is SecurityException && android.os.Build.VERSION.SDK_INT >= 30)
+                        android.provider.MediaStore.createDeleteRequest(getApplication<Application>().contentResolver, listOf(uri)).intentSender
+                    else if (android.os.Build.VERSION.SDK_INT == 29 && e is android.app.RecoverableSecurityException)
+                        e.userAction.actionIntent.intentSender else null
+                } catch (_: Exception) { null }
+                if (approval != null) {
+                    pendingDeletion = PendingDeletion(uri, onDeleted, android.os.Build.VERSION.SDK_INT == 29)
+                    _deleteApproval.value = approval
+                } else _clipDeletion.value = ClipDeletionState(uri, error = "影片未能刪除，請稍後重試。")
+            }
+        }
+    }
+
+    private suspend fun completeClipDeletion(uri: android.net.Uri, onDeleted: () -> Unit) {
+        if (_clipSave.value.uri == uri) _clipSave.value = SaveStatus()
+        if (_recordingSave.value.uri == uri) _recordingSave.value = SaveStatus()
+        com.archery.delaycam.gallery.ClipPresentationStore(getApplication()).remove(uri)
+        _clipDeletion.value = ClipDeletionState()
+        refreshGallery()
+        _toast.value = "影片已刪除"
+        onDeleted()
+    }
+
+    fun onDeleteApprovalResult(granted: Boolean) {
+        val pending = pendingDeletion ?: return
+        pendingDeletion = null
+        _deleteApproval.value = null
+        if (!granted) {
+            _clipDeletion.value = ClipDeletionState(pending.uri, error = "已取消刪除，影片仍保留。")
+        } else if (pending.retry) {
+            _clipDeletion.value = ClipDeletionState()
+            deleteClip(pending.uri, pending.onDeleted)
+        } else viewModelScope.launch {
+            try {
+                check(!galleryRepository.clipExists(pending.uri)) { "Video still exists" }
+                completeClipDeletion(pending.uri, pending.onDeleted)
+            } catch (failure: Exception) {
+                _clipDeletion.value = ClipDeletionState(pending.uri, error = "影片未能刪除，請重試。")
             }
         }
     }

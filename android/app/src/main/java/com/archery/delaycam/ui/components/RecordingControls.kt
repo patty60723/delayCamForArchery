@@ -98,6 +98,7 @@ fun SaveStatusNotice(
     save: SaveStatus,
     onRetry: () -> Unit,
     onOpenSaved: (Uri, String) -> Unit,
+    trailingAction: @Composable (() -> Unit)? = null,
 ) {
     if (save.phase == SavePhase.IDLE) return
     Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(horizontal = 12.dp),
@@ -115,6 +116,7 @@ fun SaveStatusNotice(
         if (save.phase == SavePhase.SAVED && save.uri != null) {
             TextButton(onClick = { onOpenSaved(save.uri, save.displayName) }) { Text("查看影片") }
         }
+        trailingAction?.invoke()
     }
 }
 
