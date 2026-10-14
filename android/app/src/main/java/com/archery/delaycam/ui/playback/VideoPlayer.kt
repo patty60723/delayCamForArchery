@@ -74,6 +74,7 @@ fun MediaReviewLayout(
 ) {
     var expanded by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     BoxWithConstraints(Modifier.fillMaxSize().testTag("media-review-layout")) {
+        val controlsMaxHeight = maxHeight * .55f
         if (maxWidth > maxHeight) {
             androidx.activity.compose.BackHandler(expanded) { expanded = false }
             video(Modifier.fillMaxSize().testTag("review-video"))
@@ -105,7 +106,7 @@ fun MediaReviewLayout(
             Column(Modifier.fillMaxSize()) {
                 header()
                 video(Modifier.weight(1f).fillMaxWidth().testTag("review-video"))
-                Column(Modifier.fillMaxWidth().heightIn(max = maxHeight * .55f)
+                Column(Modifier.fillMaxWidth().heightIn(max = controlsMaxHeight)
                     .verticalScroll(rememberScrollState()).padding(horizontal = 12.dp)) {
                     controls()
                     if (onBack != null) TextButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) { Text(backLabel) }
