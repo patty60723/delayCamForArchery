@@ -37,7 +37,7 @@ class RotationContinuityTest {
     private fun field(target: Any, name: String): Any? = target.javaClass.getDeclaredField(name)
         .apply { isAccessible = true }.get(target)
 
-    @Test fun landscapeLaunchAndRotationKeepPreviewBufferAndRecording() {
+    @Test(timeout = 180_000) fun landscapeLaunchAndRotationKeepPreviewBufferAndRecording() {
         val automation = instrumentation.uiAutomation
         automation.grantRuntimePermission(instrumentation.targetContext.packageName, Manifest.permission.CAMERA)
         val repository = SettingsRepository(instrumentation.targetContext)

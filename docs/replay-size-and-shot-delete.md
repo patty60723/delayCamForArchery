@@ -9,3 +9,5 @@
 版本 0.2.7-fast-return-test，code 10，名稱「測試10·箭影」。沿用 com.archery.delaycam.fastresume 及既有簽章，直接覆蓋；TEST 圖示維持。PR #6 保留草稿。
 
 新增真正 MediaStore 存檔→私有回放→取消／刪除測試、影片滿版與面板不改尺寸測試、匯出比例時間／混合片段／刪除清理測試。CI 與 APK 證據完成後補上；真人手勢與 Pixel 長時間效能仍需實測，跨 App 系統刪除授權需在實機確認。
+
+Android 媒體核對補強：刪掉影片後，直接查詢原 item URI 可能收到 SecurityException；改查同一集合的 ID 是否存在。測試清理已刪的 URI 時亦容許其已失效，保證 ViewModel／播放器釋放；新增非同步整合測試設定時間上限，避免阻擋後續測試。

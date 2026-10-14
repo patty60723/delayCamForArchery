@@ -25,6 +25,7 @@ import com.archery.delaycam.ui.theme.DelayCamTheme
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -38,9 +39,10 @@ class ReplayReviewDeleteTest {
     private fun field(vm: DelayCamViewModel, name: String) = DelayCamViewModel::class.java
         .getDeclaredField(name).apply { isAccessible = true }.get(vm)
     @Suppress("UNCHECKED_CAST")
-    @Test fun shotUsesFullLandscapeAndCanBeDeletedDirectlyFromReplay() {
+    @Test(timeout = 120_000) fun shotUsesFullLandscapeAndCanBeDeletedDirectlyFromReplay() {
         compose.activityRule.scenario.onActivity { it.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE }
         compose.waitUntil(10_000) { compose.activity.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE }
+        android.util.Log.i("ReplayDeleteTest", "Landscape ready")
         val context = compose.activity
         val owner = ViewModelStore()
         lateinit var vm: DelayCamViewModel
@@ -48,7 +50,7 @@ class ReplayReviewDeleteTest {
             vm = ViewModelProvider(owner, ViewModelProvider.AndroidViewModelFactory(context.applicationContext as Application))
                 .get(DelayCamViewModel::class.java)
         }
-        val loaded = runBlocking { SettingsRepository(context).settingsFlow.first() }
+        val loaded = runBlocking { withTimeout(5_000) { SettingsRepository(context).settingsFlow.first() } }
         compose.waitUntil(5_000) { vm.settings.value == loaded }
         val store = ImmutableSegmentStore(context.cacheDir, "replay_delete_${UUID.randomUUID()}")
         val file = store.allocate()
@@ -59,6 +61,7 @@ class ReplayReviewDeleteTest {
         var uri: Uri? = null
         val frames = AtomicInteger()
         try {
+            android.util.Log.i("ReplayDeleteTest", "Starting shot save")
             compose.runOnIdle {
                 val capture = field(vm, "captureSession") as ForegroundCaptureSession
                 capture.beginForeground()?.let { capture.markReady(it) }
@@ -73,6 +76,7 @@ class ReplayReviewDeleteTest {
             compose.runOnIdle { vm.markReplayInteraction() }
             compose.setContent { DelayCamTheme { ReplayScreen(vm, { _, _ -> }) } }
             compose.waitUntil(15_000) { vm.clipSave.value.phase == SavePhase.SAVED && frames.get() >= 3 }
+            android.util.Log.i("ReplayDeleteTest", "Saved and rendering")
             uri = vm.clipSave.value.uri!!
             compose.runOnIdle {
                 assertEquals(4f / 3f, vm.replayPlayer.currentMediaItem!!.mediaMetadata.extras!!.getFloat(CONTENT_ASPECT_KEY), .001f)
@@ -85,17 +89,20 @@ class ReplayReviewDeleteTest {
             assertEquals(layout.height, video.height, 2f)
             compose.onNodeWithText("返回練習").assertIsDisplayed()
             compose.onNodeWithText("刪除單箭").assertIsDisplayed().assertIsEnabled()
+            android.util.Log.i("ReplayDeleteTest", "Testing panel")
             compose.onNodeWithContentDescription("顯示播放操作").performClick()
             compose.onNodeWithText("0.25×").performScrollTo().assertIsDisplayed()
             assertEquals(video, compose.onNodeWithTag("review-video").fetchSemanticsNode().boundsInRoot)
             compose.onNodeWithContentDescription("收起播放操作").performClick()
             screenshot("replay-fullscreen-delete-shot")
 
+            android.util.Log.i("ReplayDeleteTest", "Testing delete confirmation")
             compose.onNodeWithText("刪除單箭").performClick()
             compose.onNodeWithText("刪除這一箭？").assertIsDisplayed()
             compose.onNodeWithText("保留影片").performClick()
             assertTrue(runBlocking { GalleryRepository(context).clipExists(uri!!) })
             compose.runOnIdle { assertEquals(AppState.REPLAY, vm.appState.value) }
+            android.util.Log.i("ReplayDeleteTest", "Testing delete confirmation")
             compose.onNodeWithText("刪除單箭").performClick()
             compose.onNodeWithText("確認刪除").performClick()
             compose.waitUntil(10_000) { vm.appState.value == AppState.LIVE && !vm.clipDeletion.value.busy }
@@ -104,7 +111,7 @@ class ReplayReviewDeleteTest {
             assertNull(vm.clipSave.value.uri)
             assertFalse(vm.galleryClips.value.any { it.uri == uri })
         } finally {
-            uri?.let { context.contentResolver.delete(it, null, null) }
+            uri?.let { runCatching { context.contentResolver.delete(it, null, null) } }
             compose.runOnUiThread { owner.clear(); context.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT }
             store.close()
         }

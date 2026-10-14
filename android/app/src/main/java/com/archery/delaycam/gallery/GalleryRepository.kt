@@ -51,17 +51,19 @@ class GalleryRepository(private val context: Context) {
     }
 
     suspend fun clipExists(uri: Uri): Boolean = withContext(Dispatchers.IO) {
-        context.contentResolver.query(uri, arrayOf(MediaStore.Video.Media._ID), null, null, null)?.use { it.moveToFirst() }
+        // MediaStore denies direct item queries once the item has been deleted.
+        // Query its collection by ID so absence is represented by an empty cursor.
+        val id = ContentUris.parseId(uri)
+        val parentPath = requireNotNull(uri.path).substringBeforeLast('/')
+        val collection = uri.buildUpon().path(parentPath).build()
+        context.contentResolver.query(collection, arrayOf(MediaStore.Video.Media._ID),
+            "${MediaStore.Video.Media._ID} = ?", arrayOf(id.toString()), null)?.use { it.moveToFirst() }
             ?: throw java.io.IOException("Cannot verify the video")
     }
 
     suspend fun deleteClip(uri: Uri) = withContext(Dispatchers.IO) {
         val deleted = context.contentResolver.delete(uri, null, null)
-        if (deleted == 0) {
-            context.contentResolver.query(uri, arrayOf(MediaStore.Video.Media._ID), null, null, null)?.use {
-                if (it.moveToFirst()) throw java.io.IOException("MediaStore did not delete the video")
-            } ?: throw java.io.IOException("Cannot verify deletion")
-        }
+        if (deleted == 0 && clipExists(uri)) throw java.io.IOException("MediaStore did not delete the video")
         ClipPresentationStore(context).remove(uri)
         Unit
     }
