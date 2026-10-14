@@ -92,4 +92,4 @@ SettingsRepository 記住 PictureMode，預設 FIT 保留完整動作；使用�
 
 ## LAN viewer prototype (not released)
 
-設定頁沿用 Material 按鈕，分享預設關閉、本次 QR 與連結、忙碌禁重複、啟動失敗持續可重試。QR 使用白底黑碼保障可讀性；連結顯示區網端點，完整授權連結僅顯示為 QR／使用者複製。瀏覽器沿用黑底橙色，影片優先、浮動可收起操作，Material 原生與網頁是不同平台適配。瀏覽器色彩以 Color.kt 為來源，token adapter 尚待加入驗證後再交付。
+設定頁沿用 Material 按鈕，分享預設關閉、本次 QR 與連結、忙碌禁重複、啟動失敗持續可重試。QR 使用白底黑碼保障可讀性；連結顯示區網端點，完整授權連結僅顯示為 QR／使用者複製。瀏覽器沿用黑底橙色，影片優先、浮動可收起操作，Material 原生與網頁是不同平台適配。瀏覽器色彩以 Color.kt 為來源，scripts/sync-viewer-theme.py 是 token adapter，--check 核對漂移；尚待瀏覽器驗證後再交付。

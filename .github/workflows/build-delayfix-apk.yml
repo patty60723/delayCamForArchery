@@ -48,6 +48,8 @@ jobs:
         run: sdkmanager "platforms;android-34" "build-tools;34.0.0"
       - name: Lint design context
         run: npx -y -p @google/design.md designmd lint ../DESIGN.md
+      - name: Verify browser viewer palette
+        run: python3 ../scripts/sync-viewer-theme.py --check
       - name: Run unit tests and build APKs
         run: |
           chmod +x gradlew
