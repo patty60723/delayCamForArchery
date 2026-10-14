@@ -92,7 +92,7 @@ class ReplayReviewDeleteTest {
             compose.onNodeWithText("刪除單箭").assertIsDisplayed().assertIsEnabled()
             compose.runOnIdle { vm.updateSettings { it.copy(pictureMode = PictureMode.FIT) } }
             screenshot("replay-picture-fit")
-            val replayItem = vm.replayPlayer.currentMediaItem
+            val replayItem = compose.runOnIdle { vm.replayPlayer.currentMediaItem }
             val generation = field(vm, "bufferGeneration")
             compose.runOnIdle { vm.updateSettings { it.copy(pictureMode = PictureMode.FILL) } }
             screenshot("replay-picture-fill")
@@ -131,6 +131,7 @@ class ReplayReviewDeleteTest {
     }
 
     private fun screenshot(name: String) {
+        compose.waitForIdle()
         val context = compose.activity
         val image = instrumentation.uiAutomation.takeScreenshot()!!
         try {
