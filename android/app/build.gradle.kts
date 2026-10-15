@@ -4,6 +4,8 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+val fastResumeTrial = providers.gradleProperty("fastResumeTrial").orNull == "true"
+
 android {
     namespace = "com.archery.delaycam"
     compileSdk = 34
@@ -17,8 +19,11 @@ android {
         minSdk = 29
         targetSdk = 34
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        versionCode = 6
-        versionName = "0.2.3"
+        versionCode = 18
+        versionName = "0.2.14"
+        buildConfigField("boolean", "FAST_RESUME_TRIAL", fastResumeTrial.toString())
+        manifestPlaceholders["appIcon"] = if (fastResumeTrial) "@mipmap/ic_launcher_test" else "@mipmap/ic_launcher"
+        manifestPlaceholders["appLabel"] = if (fastResumeTrial) "測試${versionCode}·箭影" else "@string/app_name"
     }
 
     // CI pins a cached debug key so later test builds can update this package.
@@ -29,8 +34,8 @@ android {
 
     buildTypes {
         debug {
-            applicationIdSuffix = ".delayfix3"
-            versionNameSuffix = "-recording-ux"
+            applicationIdSuffix = if (fastResumeTrial) ".fastresume" else ".delayfix3"
+            versionNameSuffix = if (fastResumeTrial) "-fast-return-test" else "-recording-ux"
         }
         release {
             isMinifyEnabled = false
@@ -49,6 +54,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     packaging {
@@ -94,6 +100,8 @@ dependencies {
     val media3Version = "1.4.1"
     implementation("androidx.media3:media3-exoplayer:$media3Version")
     implementation("androidx.media3:media3-ui:$media3Version")
+    implementation("androidx.media3:media3-transformer:$media3Version")
+    implementation("androidx.media3:media3-effect:$media3Version")
 
     // --- Settings persistence (spec 4) ---
     implementation("androidx.datastore:datastore-preferences:1.1.1")

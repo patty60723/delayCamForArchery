@@ -25,6 +25,7 @@ fun LivePracticeLayout(
     video: @Composable (Modifier) -> Unit,
     controls: @Composable (sidePanel: Boolean) -> Unit,
     modifier: Modifier = Modifier,
+    feedbackOnRight: Boolean = false,
     landscapeFeedback: @Composable (Modifier) -> Unit = {},
 ) {
     var expanded by rememberSaveable { mutableStateOf(false) }
@@ -33,9 +34,11 @@ fun LivePracticeLayout(
             val panelWidth = (maxWidth * 0.42f).coerceIn(220.dp, 300.dp)
             BackHandler(enabled = expanded) { expanded = false }
             video(Modifier.fillMaxSize())
-            val feedbackWidth = (if (expanded) maxWidth - panelWidth - 24.dp else maxWidth - 16.dp)
+            val feedbackWidth = (if (expanded) maxWidth - panelWidth - minOf(maxWidth * 0.27f, 240.dp) - 32.dp else maxWidth - minOf(maxWidth * 0.27f, 240.dp) - 24.dp)
                 .coerceAtLeast(120.dp).coerceAtMost(400.dp)
-            landscapeFeedback(Modifier.align(Alignment.BottomStart).padding(8.dp).width(feedbackWidth))
+            landscapeFeedback(Modifier.align(if (feedbackOnRight) Alignment.BottomEnd else Alignment.BottomStart)
+                .padding(start = 8.dp, top = 8.dp, bottom = 8.dp,
+                    end = if (feedbackOnRight && expanded) panelWidth + 16.dp else 8.dp).width(feedbackWidth))
             Surface(
                 modifier = Modifier.align(Alignment.TopEnd).padding(8.dp)
                     .width(if (expanded) panelWidth else 88.dp)

@@ -3,6 +3,7 @@ package com.archery.delaycam.camera
 import android.graphics.Bitmap
 import android.media.MediaCodec
 import android.media.MediaCodecInfo
+import android.media.MediaCodecList
 import android.media.MediaFormat
 import android.media.MediaMuxer
 import android.os.Handler
@@ -72,13 +73,12 @@ private const val SEGMENT_TARGET_MS = 2000L
  * to upright, no separate orientation-hint step is needed here (unlike
  * the two earlier attempts) - the pixels themselves are already correct.
  *
- * Trade-off accepted for now: the shared conversion round-trips through a
- * lossy JPEG encode/decode (see ImageProxyConversion.kt), so recorded
- * video quality is somewhat below what direct YUV encoding would give,
- * and the conversion's CPU cost eats into the analyzer's per-frame budget
- * (ImageAnalysis's STRATEGY_KEEP_ONLY_LATEST will drop frames it can't
- * keep up with). Worth revisiting once the pipeline is confirmed to
- * actually work at all.
+ * Quality update (0.2.10): CameraX now converts to RGBA natively, removing
+ * the JPEG round trip. The bounded square canvas preserves the source's long
+ * edge in either orientation without a codec restart; playback removes known
+ * padding and export normalizes to the selected 4:3 / 16:9 output. Gesture
+ * inference uses its own smaller copy, allowing capture bitmaps to be recycled.
+ * Actual delivery FPS remains device-dependent (KEEP_ONLY_LATEST drops load).
  *
  * Confirmed on-device that this version does eliminate the SPS/PPS
  * mismatch that plagued the old Recorder-based approach - zero
@@ -103,6 +103,7 @@ class ContinuousSegmentEncoder(
     private val onSegmentFinalized: (SegmentInfo) -> Unit,
     private val onStopped: () -> Unit = {},
     private val filePrefix: String = "rollbuf",
+    private val immutableStore: ImmutableSegmentStore? = null,
 ) {
     @Volatile private var ringSize: Int = 10
     @Volatile private var running = false
@@ -120,18 +121,26 @@ class ContinuousSegmentEncoder(
     private var segmentIndex = 0
     private var segmentStartedAtMs = 0L
     private var nextCutAtMs = 0L
+    private var firstSampleUs = 0L
+    private var lastSampleUs = 0L
+    private var frameDurationUs = 33_333L
+    private var hasSample = false
+    private val frameShapes = FrameShapeTimeline()
+    private var segmentAspect: Float? = null
+    private var mixedShapes = false
 
     fun setRingSize(size: Int) {
         ringSize = size.coerceAtLeast(2)
+        immutableStore?.setKeepCount(ringSize)
     }
 
     /**
      * Call for every frame from the same ImageAnalysis.Analyzer gesture
      * detection already uses, already converted to an upright Bitmap by
      * the caller (see class doc). Lazily configures the encoder on the
-     * first call using that bitmap's dimensions.
+     * first call using a bounded rotation-safe square canvas.
      */
-    fun onFrame(bitmap: Bitmap) {
+    fun onFrame(bitmap: Bitmap, pictureAspect: Float = bitmap.width.toFloat() / bitmap.height) {
         configureIfNeeded(bitmap.width, bitmap.height)
         val surface = inputSurface ?: return
         // Timed to test one theory for the remaining periodic stalls: this
@@ -143,6 +152,7 @@ class ContinuousSegmentEncoder(
         // here could block waiting for a free input buffer, which would
         // mean actual frame capture pauses too - not just the file cut.
         val lockStartNs = System.nanoTime()
+        frameShapes.submitted(lockStartNs / 1_000L, pictureAspect)
         val canvas = try {
             surface.lockHardwareCanvas()
         } catch (e: Exception) {
@@ -154,7 +164,7 @@ class ContinuousSegmentEncoder(
             Log.w(TAG, "lockHardwareCanvas blocked for ${lockMs}ms - encoder input surface backpressure")
         }
         try {
-            canvas.drawBitmap(bitmap, 0f, 0f, null)
+            drawFrameFit(canvas, bitmap, pictureAspect)
         } finally {
             surface.unlockCanvasAndPost(canvas)
         }
@@ -163,16 +173,31 @@ class ContinuousSegmentEncoder(
     @Synchronized
     private fun configureIfNeeded(width: Int, height: Int) {
         if (codec != null) return
-        val format = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, width, height).apply {
-            setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
-            setInteger(MediaFormat.KEY_BIT_RATE, BIT_RATE)
-            setInteger(MediaFormat.KEY_FRAME_RATE, FRAME_RATE)
-            setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, I_FRAME_INTERVAL_SEC)
+        val codecs = MediaCodecList(MediaCodecList.REGULAR_CODECS)
+        val candidates = encoderCanvasCandidates(width, height)
+        val supported = candidates.firstNotNullOfOrNull { side ->
+            val format = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, side, side).apply {
+                setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
+                setInteger(MediaFormat.KEY_BIT_RATE, BIT_RATE)
+                setInteger(MediaFormat.KEY_FRAME_RATE, FRAME_RATE)
+                setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, I_FRAME_INTERVAL_SEC)
+            }
+            codecs.findEncoderForFormat(format)?.let { Triple(it, format, side) }
         }
-        val newCodec = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
-        newCodec.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
-        val surface = newCodec.createInputSurface()
-        newCodec.start()
+        checkNotNull(supported) { "No AVC encoder supports a bounded rotation-safe canvas" }
+        Log.i(TAG, "capture source=${width}x$height canvas=${supported.third}x${supported.third} " +
+            "codec=${supported.first} fallback=${supported.third != candidates.first()}")
+        val newCodec = MediaCodec.createByCodecName(supported.first)
+        var surface: Surface? = null
+        try {
+            newCodec.configure(supported.second, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+            surface = newCodec.createInputSurface()
+            newCodec.start()
+        } catch (failure: Exception) {
+            surface?.release()
+            newCodec.release()
+            throw failure
+        }
 
         codec = newCodec
         inputSurface = surface
@@ -266,12 +291,25 @@ class ContinuousSegmentEncoder(
                         buffer.position(bufferInfo.offset)
                         buffer.limit(bufferInfo.offset + bufferInfo.size)
                         m.writeSampleData(muxerTrackIndex, buffer, bufferInfo)
+                        val aspect = frameShapes.at(bufferInfo.presentationTimeUs)
+                        if (!hasSample) segmentAspect = aspect
+                        else if (aspect != segmentAspect) mixedShapes = true
+                        if (aspect == null) mixedShapes = true
+                        if (!hasSample) {
+                            firstSampleUs = bufferInfo.presentationTimeUs
+                            hasSample = true
+                        } else {
+                            val delta = bufferInfo.presentationTimeUs - lastSampleUs
+                            if (delta in 1_000L..1_000_000L) frameDurationUs = delta
+                        }
+                        lastSampleUs = bufferInfo.presentationTimeUs
                     }
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "segment write/cut failed, dropping current segment and continuing", e)
                 muxer?.let { m -> try { m.release() } catch (_: Exception) {} }
                 muxer = null
+                immutableStore?.discard(currentSegmentFile)
                 currentSegmentFile = null
             } finally {
                 try {
@@ -295,7 +333,7 @@ class ContinuousSegmentEncoder(
     }
 
     private fun startNewSegment(c: MediaCodec, startedAtMs: Long) {
-        val file = segmentFile(segmentIndex)
+        val file = immutableStore?.allocate() ?: segmentFile(segmentIndex)
         segmentIndex = (segmentIndex + 1) % ringSize
         // Timed alongside finalizeCurrentSegment()'s stop()/release() timing
         // below: log-timestamp analysis of a real test run found ~650ms of
@@ -305,7 +343,12 @@ class ContinuousSegmentEncoder(
         // MediaMuxer calls (constructor, addTrack, start) or the stop/
         // release pair in finalizeCurrentSegment(); this narrows down which.
         val ctorStartNs = System.nanoTime()
-        val newMuxer = MediaMuxer(file.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+        val newMuxer = try {
+            MediaMuxer(file.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+        } catch (e: Exception) {
+            immutableStore?.discard(file)
+            throw e
+        }
         val ctorMs = (System.nanoTime() - ctorStartNs) / 1_000_000
         // No orientation hint needed: the Bitmap onFrame() draws is already
         // upright (see class doc), unlike the two earlier attempts which
@@ -323,12 +366,17 @@ class ContinuousSegmentEncoder(
             // native resources - it never got assigned to the `muxer`
             // field, so nothing else would ever release it.
             try { newMuxer.release() } catch (_: Exception) {}
+            immutableStore?.discard(file)
             throw e
         }
         muxer = newMuxer
         currentSegmentFile = file
         segmentStartedAtMs = startedAtMs
         nextCutAtMs = startedAtMs + SEGMENT_TARGET_MS
+        hasSample = false
+        segmentAspect = null
+        mixedShapes = false
+        frameDurationUs = 33_333L
     }
 
     private fun finalizeCurrentSegment(endedAtMs: Long) {
@@ -353,16 +401,23 @@ class ContinuousSegmentEncoder(
             // long session, but never got cleaned up).
             Log.w(TAG, "muxer.stop() failed for $file after ${(System.nanoTime() - stopStartNs) / 1_000_000}ms, dropping this segment", e)
             try { m.release() } catch (_: Exception) {}
+            immutableStore?.discard(file)
             return
         }
         val stopMs = (System.nanoTime() - stopStartNs) / 1_000_000
         val releaseStartNs = System.nanoTime()
-        m.release()
+        try { m.release() } catch (e: Exception) {
+            immutableStore?.discard(file)
+            throw e
+        }
         val releaseMs = (System.nanoTime() - releaseStartNs) / 1_000_000
         if (stopMs > 100 || releaseMs > 100) {
             Log.w(TAG, "slow muxer teardown for ${file.name}: stop=${stopMs}ms release=${releaseMs}ms")
         }
-        val info = SegmentInfo(file, segmentStartedAtMs, endedAtMs)
+        val durationMs = if (hasSample) (lastSampleUs - firstSampleUs + frameDurationUs) / 1000 else 0L
+        val info = SegmentInfo(file, segmentStartedAtMs, endedAtMs, durationMs,
+            contentAspectRatio = segmentAspect.takeUnless { mixedShapes })
+        immutableStore?.publish(file)
         // Diagnostic for the still-remaining periodic stalls (~1 in 7
         // segments, no clear signal on which one or why): logging every
         // segment's actual duration and file size. A degenerate segment

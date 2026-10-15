@@ -1,5 +1,9 @@
 package com.archery.delaycam.navigation
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.result.IntentSenderRequest
+import android.app.Activity
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -46,8 +50,19 @@ import java.net.URLDecoder
 @Composable
 fun DelayCamNavHost(viewModel: DelayCamViewModel) {
     val navController = rememberNavController()
+    val approval by viewModel.deleteApproval.collectAsState()
+    val deleteLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) {
+        viewModel.onDeleteApprovalResult(it.resultCode == Activity.RESULT_OK)
+    }
+    LaunchedEffect(approval) {
+        approval?.let { sender ->
+            try { deleteLauncher.launch(IntentSenderRequest.Builder(sender).build()); viewModel.onDeleteApprovalLaunched() }
+            catch (_: Exception) { viewModel.onDeleteApprovalResult(false) }
+        }
+    }
     val appState by viewModel.appState.collectAsState()
     val toast by viewModel.toast.collectAsState()
+    val previewSource by viewModel.previewSource.collectAsState()
     val recordingPhase by viewModel.recordingPhase.collectAsState()
     val recordingElapsed by viewModel.recordingElapsedSec.collectAsState()
     val recordingSave by viewModel.recordingSave.collectAsState()
@@ -92,13 +107,13 @@ fun DelayCamNavHost(viewModel: DelayCamViewModel) {
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        PracticeCameraLayout(viewModel.previewUseCase, live = route == Routes.LIVE) { previewBounds ->
+        PracticeCameraLayout(previewSource, live = route == Routes.LIVE) { previewBounds ->
         RecordingScreenLayout(
-            practice = route == Routes.LIVE,
+            practice = route == Routes.LIVE || route == Routes.REPLAY || route == Routes.PLAYER,
             recording = { compact, modifier ->
                 RecordingControls(recordingPhase, recordingElapsed, recordingSave,
                     viewModel::toggleContinuousRecording, viewModel::retryRecordingSave, openSaved,
-                    compact = compact, modifier = modifier)
+                    compact = compact, modifier = modifier, allowStart = route == Routes.LIVE)
             },
             content = { modifier -> AppNavHost(navController, viewModel, modifier, openSaved, previewBounds) },
         )
@@ -164,7 +179,7 @@ private fun AppNavHost(
                 viewModel = viewModel,
                 clipUri = clipUri,
                 clipName = clipName,
-                onBack = { navController.popBackStack() },
+                onBack = { if (navController.currentBackStackEntry == backStackEntry) navController.popBackStack() },
             )
         }
     }

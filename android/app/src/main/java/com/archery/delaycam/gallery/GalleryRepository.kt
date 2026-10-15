@@ -20,7 +20,7 @@ class GalleryRepository(private val context: Context) {
             MediaStore.Video.Media.RELATIVE_PATH,
         )
         val selection = "${MediaStore.Video.Media.RELATIVE_PATH} LIKE ?"
-        val selectionArgs = arrayOf("Movies/Archery%")
+        val selectionArgs = arrayOf("Movies/Archery/%")
         val sortOrder = "${MediaStore.Video.Media.DATE_ADDED} DESC"
 
         context.contentResolver.query(
@@ -46,12 +46,26 @@ class GalleryRepository(private val context: Context) {
                     )
                 )
             }
-        }
+        } ?: throw java.io.IOException("Cannot read gallery")
         entries
     }
 
+    suspend fun clipExists(uri: Uri): Boolean = withContext(Dispatchers.IO) {
+        // MediaStore denies direct item queries once the item has been deleted.
+        // Query its collection by ID so absence is represented by an empty cursor.
+        val id = ContentUris.parseId(uri)
+        val parentPath = requireNotNull(uri.path).substringBeforeLast('/')
+        val collection = uri.buildUpon().path(parentPath).build()
+        context.contentResolver.query(collection, arrayOf(MediaStore.Video.Media._ID),
+            "${MediaStore.Video.Media._ID} = ?", arrayOf(id.toString()), null)?.use { it.moveToFirst() }
+            ?: throw java.io.IOException("Cannot verify the video")
+    }
+
     suspend fun deleteClip(uri: Uri) = withContext(Dispatchers.IO) {
-        context.contentResolver.delete(uri, null, null)
+        val deleted = context.contentResolver.delete(uri, null, null)
+        if (deleted == 0 && clipExists(uri)) throw java.io.IOException("MediaStore did not delete the video")
+        ClipPresentationStore(context).remove(uri)
         Unit
     }
 }
+

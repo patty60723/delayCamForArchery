@@ -9,8 +9,8 @@
     <application
         android:name=".DelayCamApp"
         android:allowBackup="false"
-        android:icon="@mipmap/ic_launcher"
-        android:label="@string/app_name"
+        android:icon="${appIcon}"
+        android:label="${appLabel}"
         android:theme="@style/Theme.DelayCam"
         android:supportsRtl="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
@@ -20,6 +20,7 @@
             android:name=".MainActivity"
             android:exported="true"
             android:screenOrientation="fullSensor"
+            android:configChanges="orientation|screenSize|smallestScreenSize"
             android:theme="@style/Theme.DelayCam">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -29,3 +30,4 @@
     </application>
 
 </manifest>
+
