@@ -1,4 +1,4 @@
-name: Build and verify fast return comparison APK
+name: Build and verify capture aspect comparison APK
 
 on:
   push:
@@ -65,8 +65,8 @@ jobs:
               for key in totals:
                   totals[key] += int(root.attrib.get(key, '0'))
           print('UNIT_TEST_RESULTS', totals)
-          if totals['failures'] or totals['errors']:
-              raise SystemExit('Unit tests failed')
+          if totals['failures'] or totals['errors'] or totals['skipped']:
+              raise SystemExit('Unit tests failed or were skipped')
           PY
       - name: Verify APK signature
         run: |
