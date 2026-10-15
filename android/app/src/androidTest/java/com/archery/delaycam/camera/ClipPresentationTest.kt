@@ -10,7 +10,7 @@ import java.io.File
 import java.util.UUID
 
 class ClipPresentationTest {
-    @Test(timeout = 60_000) fun exportKeepsMixedShapeTimelineAndDeletionRemovesItsMetadata() = runBlocking {
+    @Test(timeout = 60_000) fun normalizedExportUsesActualCanvasAspectAndDeletionRemovesItsMetadata() = runBlocking {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
         val file = File.createTempFile("presentation", ".mp4", context.cacheDir)
@@ -25,8 +25,15 @@ class ClipPresentationTest {
             val ranges = store.read(uri!!)
             assertEquals(3, ranges.size)
             assertEquals(4f / 3f, ClipPresentationStore.aspectAt(ranges, 500)!!, .001f)
-            assertNull(ClipPresentationStore.aspectAt(ranges, 1500))
-            assertEquals(.75f, ClipPresentationStore.aspectAt(ranges, 2500)!!, .001f)
+            assertEquals(4f / 3f, ClipPresentationStore.aspectAt(ranges, 1500)!!, .001f)
+            assertEquals(4f / 3f, ClipPresentationStore.aspectAt(ranges, 2500)!!, .001f)
+            val retriever = android.media.MediaMetadataRetriever()
+            try {
+                retriever.setDataSource(context, uri!!)
+                val frame = retriever.getFrameAtTime(500_000)!!
+                try { assertEquals(4f / 3f, frame.width.toFloat() / frame.height, .02f) }
+                finally { frame.recycle() }
+            } finally { retriever.release() }
             GalleryRepository(context).deleteClip(uri!!)
             assertFalse(GalleryRepository(context).clipExists(uri!!))
             assertTrue(store.read(uri!!).isEmpty())

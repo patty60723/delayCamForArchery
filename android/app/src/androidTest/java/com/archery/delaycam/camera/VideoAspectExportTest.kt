@@ -9,6 +9,27 @@ import org.junit.Test
 import java.io.File
 
 class VideoAspectExportTest {
+    @Test(timeout = 30_000) fun matchingFormatKeepsOriginalFileBytesAndMixedPresentationTimeline() = runBlocking {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val source = File.createTempFile("same_aspect", ".mp4", context.cacheDir)
+        instrumentation.context.assets.open("clip-fixture.mp4").use { input -> source.outputStream().use { input.copyTo(it) } }
+        try {
+            val before = source.readBytes()
+            val retriever = MediaMetadataRetriever()
+            val aspect = try {
+                retriever.setDataSource(source.absolutePath)
+                retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)!!.toFloat() /
+                    retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)!!.toFloat()
+            } finally { retriever.release() }
+            val ranges = listOf(PictureRange(500, aspect), PictureRange(1000, null))
+            val result = VideoAspectNormalizer.normalize(context, source, ranges, aspect)
+            assertSame(source, result.file)
+            assertEquals(ranges, result.ranges)
+            assertArrayEquals(before, result.file.readBytes())
+        } finally { source.delete() }
+    }
+
     @Test(timeout = 120_000) fun paddedLandscapeIsExportedAsRealLandscapeAndMixedSourceRemainsVisible() = runBlocking {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
