@@ -136,3 +136,5 @@ DelayCamNavHost 依目前路由傳遞 RecordingControls.allowStart，僅 Routes.
 瀏覽器選同一來源目標時間（拍攝時間減 delaySec），不再加第二次延遲。網路與片段交接可能增加等待；累積落後過多時接回目前目標，不播放全部積壓歷史。載入後確實解碼首畫格才換掉保留畫面；中斷會標示最後畫面。輪詢在分頁隱藏停止、回前景恢復，epoch／delay 改變重新建立觀看。操作面板 Escape 還原按鈕焦點；不干擾拍攝端手勢與本機錄影。
 
 本輪驗收以電腦 Chrome／Edge 為目標，Chromium 自動測試；真實 Pixel→電腦 Wi-Fi／熱點由使用者試裝驗收。不能以 localhost 或模擬器測試宣稱已完成實際無線連線、Safari 相容性、永久配對或遠端控制。
+
+電腦首次授權由 LanViewerServer 的 JoinRequest 與 ViewerShareControls 擁有：電腦輸入短位址，POST 隨機192-bit要求ID、顯示六位核對代碼；手機只在本機允許／拒絕。未批准前輪詢不回傳觀看 token，允許後才導向本次觀看頁。要求重送按同ID冪等，最多四個待確認／24個短期項目，新要求清除三分鐘前項目；停止連線使全部失效。不存在遠端授權／相機控制路由。LanViewerServerTest、LanViewerIntegrationTest 與瀏覽器測試涵蓋拒絕、重試、核對、允許前無媒體與允許後觀看。

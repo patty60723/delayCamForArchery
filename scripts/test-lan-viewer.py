@@ -13,11 +13,28 @@ root = Path(__file__).resolve().parents[1]
 assets = root/'android/app/src/main/assets/viewer'
 out = Path(a.output); out.mkdir(parents=True, exist_ok=True)
 media = Path(a.media).read_bytes()
-control = dict(start=time.time()*1000, epoch='test-1', fail=False, expire=False, status_calls=0, ids=[])
-base = '/v/local-browser-test/'
+control = dict(start=time.time()*1000, epoch='test-1', fail=False, expire=False, status_calls=0, ids=[], joins={}, latest_join=None)
+base = '/v/' + 'b'*48 + '/'
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *_): pass
+    def do_POST(self):
+        if not self.path.startswith('/join/') or len(self.path.removeprefix('/join/'))!=48:
+            self.send_error(405);return
+        nonce=self.path.removeprefix('/join/')
+        control['joins'][nonce]='pending';control['latest_join']=nonce
+        self.send_response(200);self.end_headers();self.wfile.write(b'{"state":"pending"}')
     def do_GET(self):
+        if self.path in ['/', '/join.js', '/viewer.css']:
+            name={'/':'join.html','/join.js':'join.js','/viewer.css':'viewer.css'}[self.path]
+            self.send_response(200)
+            self.send_header('Content-Type',{'join.html':'text/html','join.js':'text/javascript','viewer.css':'text/css'}[name]+'; charset=utf-8')
+            self.end_headers();self.wfile.write((assets/name).read_bytes());return
+        if self.path.startswith('/join/'):
+            state=control['joins'].get(self.path.removeprefix('/join/'),'denied')
+            data={'state':state}
+            if state=='approved':data['path']=base
+            self.send_response(200);self.send_header('Content-Type','application/json');self.end_headers()
+            self.wfile.write(json.dumps(data).encode());return
         route = self.path.removeprefix(base)
         if not self.path.startswith(base): self.send_error(404); return
         if route == 'status':
@@ -63,7 +80,22 @@ try:
         browser=p.chromium.launch(executable_path=a.browser,headless=True,args=['--no-sandbox'])
         page=browser.new_page(viewport=dict(width=1280,height=720))
         page.on('pageerror',lambda e:errors.append(str(e)))
-        page.goto(f'http://127.0.0.1:{server.server_port}{base}')
+        page.goto(f'http://127.0.0.1:{server.server_port}/')
+        page.get_by_role('button',name='向手機要求觀看',exact=True).click()
+        page.wait_for_function('document.querySelector("#join-status").textContent.includes("等待手機")',timeout=8000)
+        check('no_media_before_phone_approval',not control['ids'])
+        nonce=control['latest_join'];control['joins'][nonce]='denied'
+        page.wait_for_function('!document.querySelector("#join").disabled',timeout=8000)
+        check('join_denial_offers_retry','拒絕' in page.locator('#join-status').inner_text())
+        page.get_by_role('button',name='向手機要求觀看',exact=True).click()
+        deadline=time.monotonic()+8
+        while control['latest_join']==nonce and time.monotonic()<deadline:page.wait_for_timeout(100)
+        check('join_retry_uses_new_request_identity',control['latest_join']!=nonce)
+        control['joins'][control['latest_join']]='approved'
+        page.wait_for_url(f'**{base}',timeout=8000)
+        check('approval_opens_private_viewer',True)
+        control['start']=time.time()*1000;control['epoch']='fresh-after-approval'
+        page.wait_for_function('epoch==="fresh-after-approval"',timeout=8000)
         page.get_by_role('button',name='開始觀看',exact=True).click()
         page.wait_for_function('!document.querySelector("#notice").hidden',timeout=5000)
         page.wait_for_function('document.querySelector("#film").videoWidth>0 && document.querySelector("#film").style.opacity==="1"',timeout=15000)

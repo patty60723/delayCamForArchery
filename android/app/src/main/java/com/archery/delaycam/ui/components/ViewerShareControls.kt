@@ -27,7 +27,7 @@ fun ViewerShareControls(viewModel: DelayCamViewModel) {
     val link = selectedLink?.takeIf { it in state.links } ?: state.links.firstOrNull()
     Column(Modifier.fillMaxWidth().padding(top = 24.dp)) {
         Text("電腦觀看 · 測試版", style = MaterialTheme.typography.titleSmall)
-        Text("手機與電腦連同一個 Wi-Fi，或讓電腦連上這支手機的熱點。電腦用 Chrome／Edge 開啟下方連結，再點「開始觀看」。拍攝 App 需保持前景。",
+        Text("手機與電腦連同一個 Wi-Fi，或讓電腦連上這支手機的熱點。電腦用 Chrome／Edge 輸入下方短位址、要求連線，再於手機核對代碼並允許。拍攝 App 需保持前景。",
             Modifier.padding(vertical = 8.dp), style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
         Button(onClick = { if (state.running) viewModel.stopViewerShare() else viewModel.startViewerShare() },
@@ -37,6 +37,15 @@ fun ViewerShareControls(viewModel: DelayCamViewModel) {
         state.error?.let { Text(it, color = MaterialTheme.colorScheme.error,
             modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }) }
         if (state.running) {
+            state.requests.forEach { request ->
+                Text("電腦要求觀看 · 代碼 ${request.code}", style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+                Text("核對電腦上的代碼是否相同。來源：${request.address}", style = MaterialTheme.typography.bodySmall)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { viewModel.approveViewerJoin(request.id, false) }) { Text("拒絕") }
+                    Button(onClick = { viewModel.approveViewerJoin(request.id, true) }) { Text("允許觀看") }
+                }
+            }
             Text("只供觀看；本次連結在關閉觀看連線或切到背景後失效。請使用自己的 Wi-Fi 或熱點。片段切換可能短暫停頓。",
                 Modifier.padding(top = 8.dp), style = MaterialTheme.typography.bodySmall)
             if (link == null) Text("尚未找到區網位址。連上 Wi-Fi 或開啟熱點後，按「重新取得連結」。")
@@ -47,6 +56,10 @@ fun ViewerShareControls(viewModel: DelayCamViewModel) {
                 }
             }
             if (link != null) {
+                androidx.compose.foundation.text.selection.SelectionContainer {
+                    Text(link.substringBefore("/v/") + "/", style = MaterialTheme.typography.titleMedium)
+                }
+                Text("電腦輸入這個短位址即可，不必切到其他 App 傳連結。手機有要求時，核對代碼並允許觀看。", style = MaterialTheme.typography.bodySmall)
                 val qr by produceState<Bitmap?>(null, link) {
                     value = withContext(Dispatchers.Default) {
                         val matrix = QRCodeWriter().encode(link, BarcodeFormat.QR_CODE, 512, 512)

@@ -110,8 +110,10 @@ SettingsRepository 記住 PictureMode，預設 FIT 保留完整動作；使用�
 
 ## LAN viewer trial (0.3.0)
 
-多機19使用獨立 com.archery.delaycam.lanviewer，與單機測試18並存。沿用黑底橙色與 TEST 圖示，不要求使用者移除已通過的對照版。設定頁的 ViewerShareControls 擁有開啟／關閉觀看連線、選取本機網路位址、QR、可選取文字及複製連結；預設關閉，繁中說明限自己的 Wi-Fi／熱點、前景拍攝、本次連結的有效範圍。停止／背景撤銷連結，不展示成永久配對。
+多機19使用獨立 com.archery.delaycam.lanviewer，與單機測試18並存。沿用黑底橙色與 TEST 圖示，不要求使用者移除已通過的對照版。設定頁的 ViewerShareControls 擁有開啟／關閉觀看連線、短位址、電腦要求的核對代碼與允許／拒絕、QR、可選取文字及複製完整連結；預設關閉，繁中說明限自己的 Wi-Fi／熱點、前景拍攝、本次連結的有效範圍。停止／背景撤銷連結，不展示成永久配對。
 
 電腦網頁 viewer/index.html 使用完整視窗影片，操作面板覆蓋且可捲動、不縮小影片，保留 FIT／FILL 及 Escape 關閉並還原焦點。初次需點擊開始觀看；準備搭配可讀秒數，斷線持續顯示最後畫面與重連文字。片段交接保留最後已解碼畫面，首個新畫格確實解碼才顯示新影片，仍可能短暫停頓，不能宣稱無縫串流。目標延遲與估計影像年齡分開，時間估計不逐次 aria-live 播報。
 
 瀏覽器色彩由 scripts/sync-viewer-theme.py 從 Color.kt 同一色彩來源生成；CI --check 防止漂移。按鈕 48px、focus-visible、全域 scrollbar、繁中標籤、狀態 live region；本輪以桌面 Chromium 實際解碼與可縮小橫向視窗驗證。手機 Safari 尚未列為已驗證的平台。
+
+電腦以短位址開啟 join.html，按要求觀看後顯示本次核對代碼；手機在設定頁核對並允許，電腦才取得192-bit觀看連結。沒有獲准前不傳媒體。不要求把手機切到其他 App 傳長連結，避免背景撤銷造成無效連線。拒絕後可重試產生新要求；這不是永久配對。

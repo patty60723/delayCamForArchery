@@ -95,7 +95,8 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
     private val _viewerShare = MutableStateFlow(ViewerShareState())
     val viewerShare = _viewerShare.asStateFlow()
     data class ViewerShareState(val running: Boolean = false, val busy: Boolean = false,
-        val links: List<String> = emptyList(), val error: String? = null)
+        val links: List<String> = emptyList(), val error: String? = null,
+        val requests: List<com.archery.delaycam.viewer.LanViewerServer.JoinRequest> = emptyList())
 
     fun startViewerShare() {
         if (!BuildConfig.LAN_VIEWER_TRIAL || !captureSession.isForeground() ||
@@ -113,19 +114,27 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
                 val links = withContext(Dispatchers.IO) {
                     val app = getApplication<Application>()
                     val server = com.archery.delaycam.viewer.LanViewerServer(viewerSource,
-                        { name -> app.assets.open("viewer/$name").use { it.readBytes() } })
+                        { name -> app.assets.open("viewer/$name").use { it.readBytes() } },
+                        onJoinRequest = { request -> viewModelScope.launch {
+                            if (generation == viewerGeneration) _viewerShare.value = _viewerShare.value.copy(
+                                requests = (_viewerShare.value.requests + request).takeLast(4))
+                        } })
                     pending = server
                     viewerAddresses().map(server::url)
                 }
                 if (generation != viewerGeneration) return@launch
                 viewerServer = pending; pending = null
-                _viewerShare.value = ViewerShareState(running = true, links = links)
+                _viewerShare.value = _viewerShare.value.copy(running = true, busy = false, links = links, error = null)
             } catch (e: CancellationException) { throw e
             } catch (e: Exception) {
                 if (generation == viewerGeneration) _viewerShare.value = ViewerShareState(error = "無法開啟觀看連線，請稍後重試。")
                 Log.w(TAG, "Viewer server start failed", e)
             } finally { pending?.close() }
         }
+    }
+    fun approveViewerJoin(id: String, allowed: Boolean) {
+        viewerServer?.approveJoin(id, allowed)
+        _viewerShare.value = _viewerShare.value.copy(requests = _viewerShare.value.requests.filterNot { it.id == id })
     }
     fun refreshViewerLinks() {
         val server = viewerServer ?: return

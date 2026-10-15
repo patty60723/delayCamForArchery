@@ -19,10 +19,32 @@ class LanViewerServer(
     private val source: ViewerSegmentSource,
     private val asset: (String) -> ByteArray,
     bindAddress: InetAddress = InetAddress.getByName("0.0.0.0"),
+    private val onJoinRequest: (JoinRequest) -> Unit = {},
 ) : AutoCloseable {
     val token = ByteArray(24).also { SecureRandom().nextBytes(it) }.joinToString("") { "%02x".format(it) }
     private val prefix = "/v/$token/"
-    private val assets = listOf("index.html", "viewer.js", "viewer.css").associateWith { asset(it) }
+    data class JoinRequest(val id: String, val code: String, val address: String)
+    private data class JoinEntry(val request: JoinRequest, val createdAt: Long, var approved: Boolean? = null)
+    private val joins = linkedMapOf<String, JoinEntry>()
+    @Synchronized fun approveJoin(id: String, allowed: Boolean) { joins[id]?.approved = allowed }
+    @Synchronized private fun joinStatus(id: String): String? = joins[id]?.let {
+        when (it.approved) {
+            true -> "{\"state\":\"approved\",\"path\":\"$prefix\"}"
+            false -> "{\"state\":\"denied\"}"
+            null -> "{\"state\":\"pending\"}"
+        }
+    }
+    @Synchronized private fun requestJoin(id: String, address: String): Boolean {
+        val now = System.currentTimeMillis()
+        joins.entries.removeAll { now - it.value.createdAt > 180_000 }
+        if (joins.containsKey(id)) return true
+        if (joins.values.count { it.approved == null } >= 4 || joins.size >= 24) return false
+        val request = JoinRequest(id, id.take(6).uppercase(), address)
+        joins[id] = JoinEntry(request, now)
+        onJoinRequest(request)
+        return true
+    }
+    private val assets = listOf("index.html", "viewer.js", "viewer.css", "join.html", "join.js").associateWith { asset(it) }
     private val listener = ServerSocket().apply { reuseAddress = true; bind(InetSocketAddress(bindAddress, 0)) }
     val port: Int get() = listener.localPort
     private val clients = ConcurrentHashMap.newKeySet<Socket>()
@@ -70,10 +92,27 @@ class LanViewerServer(
         val path = request.getOrNull(1) ?: ""
         val head = method == "HEAD"
         fun respond(code: Int, message: String) = bytes(out, code, "text/plain; charset=utf-8", message.toByteArray(), head)
-        if (method != "GET" && !head) { respond(405, "Read only"); return }
-        if (!path.startsWith(prefix)) { respond(404, "Not found"); return }
         val origin = headers["origin"]
         if (origin != null && origin != "http://${headers["host"]}") { respond(403, "Forbidden"); return }
+        val joinId = Regex("/join/([0-9a-f]{48})").matchEntire(path)?.groupValues?.get(1)
+        if (method == "POST" && joinId != null) {
+            if (!requestJoin(joinId, socket.inetAddress.hostAddress ?: "區網裝置")) respond(429, "Too many requests")
+            else bytes(out, 200, "application/json", "{\"state\":\"pending\"}".toByteArray(), false)
+            return
+        }
+        if (method != "GET" && !head) { respond(405, "Read only"); return }
+        if (path == "/" || path == "/join.js" || path == "/viewer.css") {
+            val name = when (path) { "/" -> "join.html"; "/join.js" -> "join.js"; else -> "viewer.css" }
+            val type = when (name) { "join.html" -> "text/html; charset=utf-8"; "join.js" -> "text/javascript; charset=utf-8"; else -> "text/css; charset=utf-8" }
+            bytes(out, 200, type, assets.getValue(name), head); return
+        }
+        if (joinId != null) {
+            val result = joinStatus(joinId)
+            if (result == null) respond(404, "Not found")
+            else bytes(out, 200, "application/json", result.toByteArray(), head)
+            return
+        }
+        if (!path.startsWith(prefix)) { respond(404, "Not found"); return }
         when (val route = path.removePrefix(prefix)) {
             "", "index.html" -> bytes(out, 200, "text/html; charset=utf-8", assets.getValue("index.html"), head)
             "viewer.js" -> bytes(out, 200, "text/javascript; charset=utf-8", assets.getValue(route), head)
@@ -118,7 +157,7 @@ class LanViewerServer(
     }
     private fun header(out: OutputStream, code: Int, type: String, length: Long, extra: String = "") {
         val reason = when(code) { 200 -> "OK"; 206 -> "Partial Content"; 403 -> "Forbidden"; 404 -> "Not Found";
-            405 -> "Method Not Allowed"; 410 -> "Gone"; else -> "Range Not Satisfiable" }
+            405 -> "Method Not Allowed"; 410 -> "Gone"; 429 -> "Too Many Requests"; else -> "Range Not Satisfiable" }
         out.write(("HTTP/1.1 $code $reason\r\nContent-Type: $type\r\nContent-Length: $length\r\n" +
             "Connection: close\r\nCache-Control: no-store\r\nReferrer-Policy: no-referrer\r\n" +
             "X-Content-Type-Options: nosniff\r\n" +

@@ -1,5 +1,9 @@
 {
   "checks": {
+    "no_media_before_phone_approval": true,
+    "join_denial_offers_retry": true,
+    "join_retry_uses_new_request_identity": true,
+    "approval_opens_private_viewer": true,
     "h264_decodes_after_explicit_start": true,
     "consecutive_segments_play": true,
     "delay_drift_bounded": true,

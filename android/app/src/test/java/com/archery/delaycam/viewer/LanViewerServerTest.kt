@@ -55,6 +55,31 @@ class LanViewerServerTest {
         } finally { store.close(); dir.deleteRecursively() }
     }
 
+    @Test fun computerJoinRequiresExplicitPhoneApprovalAndRejectsDeniedRequests() {
+        val requests = java.util.Collections.synchronizedList(mutableListOf<LanViewerServer.JoinRequest>())
+        LanViewerServer(ViewerSegmentSource(), { "fixture-$it".toByteArray() },
+            InetAddress.getLoopbackAddress(), { requests += it }).use { server ->
+            assertTrue(get(server, "/").contains("fixture-join.html"))
+            val id = "a".repeat(48)
+            assertTrue(get(server, "/join/$id", method = "POST").startsWith("HTTP/1.1 200"))
+            assertFalse(get(server, "/join/$id").contains(server.token))
+            assertTrue(get(server, "/join/$id").contains("pending"))
+            get(server, "/join/$id", method = "POST")
+            assertEquals(1, requests.size)
+            assertEquals("AAAAAA", requests.single().code)
+            server.approveJoin(id, false)
+            assertTrue(get(server, "/join/$id").contains("denied"))
+            assertFalse(get(server, "/join/$id").contains(server.token))
+            val next = "b".repeat(48)
+            get(server, "/join/$next", method = "POST")
+            server.approveJoin(next, true)
+            assertTrue(get(server, "/join/$next").contains("/v/${server.token}/"))
+            assertTrue(get(server, "/join/" + "c".repeat(48)).startsWith("HTTP/1.1 404"))
+            repeat(4) { i -> get(server, "/join/" + (i+1).toString().repeat(48), method = "POST") }
+            assertTrue(get(server, "/join/" + "d".repeat(48), method = "POST").startsWith("HTTP/1.1 429"))
+        }
+    }
+
     @Test fun rangesRejectOverflowMultipleOrInvalidValues() {
         assertNull(parseByteRange("bytes=9223372036854775808-", 10))
         assertNull(parseByteRange("bytes=0-1,4-5", 10))

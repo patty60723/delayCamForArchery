@@ -30,9 +30,9 @@ class LanViewerIntegrationTest {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private fun field(vm: DelayCamViewModel, name: String) = DelayCamViewModel::class.java
         .getDeclaredField(name).apply { isAccessible = true }.get(vm)
-    private fun request(port: Int, path: String): Pair<String, ByteArray> = Socket("127.0.0.1", port).use { socket ->
+    private fun request(port: Int, path: String, method: String = "GET"): Pair<String, ByteArray> = Socket("127.0.0.1", port).use { socket ->
         socket.soTimeout = 5000
-        socket.getOutputStream().write("GET $path HTTP/1.1\r\nHost: 127.0.0.1:$port\r\n\r\n".toByteArray())
+        socket.getOutputStream().write("$method $path HTTP/1.1\r\nHost: 127.0.0.1:$port\r\n\r\n".toByteArray())
         val bytes = socket.getInputStream().readBytes()
         val boundary = bytes.indices.first { i -> i + 3 < bytes.size && bytes[i] == 13.toByte() && bytes[i+1] == 10.toByte() && bytes[i+2] == 13.toByte() && bytes[i+3] == 10.toByte() }
         bytes.copyOfRange(0, boundary).toString(Charsets.UTF_8) to bytes.copyOfRange(boundary+4, bytes.size)
@@ -65,6 +65,13 @@ class LanViewerIntegrationTest {
             val server = field(vm, "viewerServer") as LanViewerServer
             val token = server.token
             val path = "/v/$token/"
+            val joinId = "a".repeat(48)
+            assertTrue(request(server.port, "/join/$joinId", "POST").first.startsWith("HTTP/1.1 200"))
+            assertFalse(request(server.port, "/join/$joinId").second.toString(Charsets.UTF_8).contains(token))
+            compose.waitUntil(10_000) { vm.viewerShare.value.requests.any { it.id == joinId } }
+            compose.onNodeWithText("允許觀看").performScrollTo().assertIsDisplayed().performClick()
+            val approved = request(server.port, "/join/$joinId").second.toString(Charsets.UTF_8)
+            assertTrue(approved.contains(token))
             val response = request(server.port, "${path}status")
             assertTrue(response.first.startsWith("HTTP/1.1 200"))
             val status = JSONObject(response.second.toString(Charsets.UTF_8))

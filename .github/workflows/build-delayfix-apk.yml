@@ -66,6 +66,7 @@ jobs:
         run: |
           python3 ../scripts/sync-viewer-theme.py --check
           node --check app/src/main/assets/viewer/viewer.js
+          node --check app/src/main/assets/viewer/join.js
       - name: Run unit tests and build APKs
         run: |
           chmod +x gradlew
