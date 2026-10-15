@@ -163,7 +163,7 @@ jobs:
             test -s app/build/trial-installed.txt
             echo COEXISTENCE_INSTALL_OK
             mkdir -p app/build/viewer-ci
-            adb pull /sdcard/Android/data/com.archery.delaycam.lanviewer/files/viewer-ci/. app/build/viewer-ci/
+            adb pull /sdcard/Download/ArcheryViewerCi/. app/build/viewer-ci/
             mkdir -p app/build/ui-screenshots
             adb pull /sdcard/Pictures/ArcheryUiReview app/build/ui-screenshots
       - name: Verify desktop browser against Android-captured H264

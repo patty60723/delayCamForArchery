@@ -84,6 +84,16 @@ class LanViewerIntegrationTest {
                     assertTrue(retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)!!.toInt() > 0)
                     assertTrue(retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)!!.toLong() > 0)
                 } finally { retriever.release() }
+                // UTP may uninstall the target APK after instrumentation. Public,
+                // synthetic CI samples survive that cleanup for desktop decode checks.
+                val sample = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, ContentValues().apply {
+                    put(MediaStore.Downloads.DISPLAY_NAME, "sample-$id.mp4")
+                    put(MediaStore.Downloads.MIME_TYPE, "video/mp4")
+                    put(MediaStore.Downloads.RELATIVE_PATH, "Download/ArcheryViewerCi")
+                    put(MediaStore.Downloads.IS_PENDING, 1)
+                })!!
+                resolver.openOutputStream(sample)!!.use { it.write(media.second) }
+                resolver.update(sample, ContentValues().apply { put(MediaStore.Downloads.IS_PENDING, 0) }, null, null)
             }
             scenario.onActivity { it.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT }
             compose.waitUntil(15_000) { activity.resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT }
