@@ -1,5 +1,7 @@
 # 多機19：Pixel 拍攝，電腦瀏覽器觀看
 
+> 後續多機20已將連線移到獨立「多裝置」頁，支援練習頁入口與待確認提示，且可直接更新多機19。新版安裝與流程請見 [多機20文件](lan-viewer-navigation.md)；下方保留多機19的驗證紀錄。
+
 多機19已建置並通過下列自動驗證，接下來可測實際 Pixel→電腦的 Wi-Fi／熱點。以使用者確認可用的測試18為基礎整合，使用獨立 package，可保留測試18輪流開啟比較。
 
 [下載 APK ZIP](https://github.com/patty60723/delayCamForArchery/actions/runs/38751387321/artifacts/11981892078) · [原生報告、實際片段與瀏覽器截圖](https://github.com/patty60723/delayCamForArchery/actions/runs/38751387321/artifacts/11981877970) · [合成影片瀏覽器報告](https://github.com/patty60723/delayCamForArchery/actions/runs/38751387321/artifacts/11980548496)

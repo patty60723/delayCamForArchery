@@ -1,0 +1,33 @@
+{
+  "source": "dffecfc23e50461f93a75897adb353c3f05cf951",
+  "sourceTree": "40628dd027137bfcafab803acbc3ca412047d6c5",
+  "run": 38771731653,
+  "apkArtifact": 11992890046,
+  "apkSha256": "974ed724eda0657c831f38d1a49597ed7710e9dad74ab4d34aed288b38dcefba",
+  "certificateSha256": "88a2f38df88584d3ec9bdd684afa80d23e37917ff68a360bd6f3e24dc6bc3247",
+  "unit": {
+    "tests": 59,
+    "failures": 0
+  },
+  "browserSynthetic": {
+    "checks": 18,
+    "passed": 18
+  },
+  "native": {
+    "tests": 55,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "browserActualCamera": {
+    "checks": 18,
+    "passed": 18
+  },
+  "nativeArtifact": 11991284814,
+  "jobsPassed": [
+    "build",
+    "ui-tests",
+    "browser-tests"
+  ],
+  "nativeScreenshotsReviewed": 6
+}
