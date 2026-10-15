@@ -10,10 +10,12 @@
 
 App等待DataStore初始設定後才綁定，之後由captureAspect＋recordingPhase觀察來源；只改比例且IDLE時重新協商。旋轉與其他設定不重綁，錄影中原有按鈕及ViewModel防護維持。新的Preview以StateFlow傳給唯一PreviewView，DisposableEffect只接換SurfaceProvider。舊ImageAnalysis先清理並以identity拒絕舊影格。單一固定正方形MediaCodec、前景session、緩衝與播放清單不因換來源主動清除；相機重綁仍可能短暫停頓，真正背景仍依既有規則重建緩衝。
 
-切換本身不增加新的相機use case，仍只有Preview＋ImageAnalysis。test15的預載與GPU影像正常回收策略維持；輸出MP4及取景比例政策沿用。720p為目標，裝置支援與長時間負載需實機驗收。
+切換本身不增加新的相機use case，仍只有Preview＋ImageAnalysis。test15的預載與GPU影像正常回收策略維持；輸出MP4及取景比例政策沿用。720p為目標，裝置支援與長時間負載需實機驗收。若初次來源尺寸較小，固定編碼畫布也較小；後續提高相機來源尺寸不會重啟編碼器放大畫布，需新的前景session才重新協商編碼尺寸。
 
 ## 驗證
 
 新增JVM測試優先來源、單次退回、兩次失敗終止、4:3不繞回16:9、權限／取消與來源比例尺寸。原生測試以真實CameraX前鏡頭驗證4:3→16:9→4:3及相同PreviewView繼續接收RGBA影格，另以受控模擬16:9失敗分支接上真正4:3綁定，並驗證退回文字。原有MainActivity旋轉測試加驗實際16:9來源與保留同一編碼器／緩衝，既有黑畫格與缺段恢復測試不移除。
 
-CI結果與下載待完成後補入。套件com.archery.delaycam.fastresume、versionCode16、0.2.12-fast-return-test，啟動器測試16·箭影。沿用固定簽章，驗證通過後可覆蓋測試15。
+首次CI 38711772357：52 JVM通過；47原生中46通過，新來源協商／退回／來源提示及MainActivity切來源保留緩衝測試均通過。唯一失敗為既有ReplayReviewDeleteTest等待FILL偏好寫入15秒逾時。設定寫入改成Main按請求順序取得Mutex、IO執行DataStore transaction，避免DataStore transform依賴UI執行緒，並序列化快速切換。增加快速多次設定更改、最後選擇落盤與新ViewModel還原的原生測試；原有逾時斷言不放寬，補上最後觀察值以利診斷。此為針對寫入執行緒與順序的修正，不宣稱已從這份紀錄證明唯一因果。
+
+最終CI結果與下載待完成後補入。套件com.archery.delaycam.fastresume、versionCode16、0.2.12-fast-return-test，啟動器測試16·箭影。沿用固定簽章，驗證通過後可覆蓋測試15。

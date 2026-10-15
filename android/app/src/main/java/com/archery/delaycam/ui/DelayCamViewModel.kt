@@ -56,6 +56,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.util.concurrent.Executors
 import java.io.File
 
@@ -82,6 +84,7 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
     private val _settings = MutableStateFlow(AppSettings())
     val settings: StateFlow<AppSettings> = _settings.asStateFlow()
     private var pendingSettings: AppSettings? = null
+    private val settingsSaveMutex = Mutex()
     @Volatile private var hasCameraFrame = false
 
     private val _appState = MutableStateFlow(AppState.LIVE)
@@ -428,7 +431,13 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
         pendingSettings = next
         _settings.value = next
         applyBufferWindow(next)
-        viewModelScope.launch { settingsRepository.save(next) }
+        viewModelScope.launch {
+            // Preserve request order, but never require a UI-thread transform for
+            // a DataStore transaction. Rapid changes must persist the last choice.
+            settingsSaveMutex.withLock {
+                withContext(Dispatchers.IO) { settingsRepository.save(next) }
+            }
+        }
     }
 
     private fun applyBufferWindow(settings: AppSettings) {

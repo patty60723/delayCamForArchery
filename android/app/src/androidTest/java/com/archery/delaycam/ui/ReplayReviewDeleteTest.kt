@@ -148,11 +148,13 @@ class ReplayReviewDeleteTest {
     private fun awaitStoredSettings(context: android.content.Context,
         predicate: (com.archery.delaycam.settings.AppSettings) -> Boolean): com.archery.delaycam.settings.AppSettings {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-        val read = scope.async { SettingsRepository(context).settingsFlow.first { predicate(it) } }
+        val observed = java.util.concurrent.atomic.AtomicReference<com.archery.delaycam.settings.AppSettings?>()
+        val read = scope.async { SettingsRepository(context).settingsFlow.first { observed.set(it); predicate(it) } }
         try {
             // Drive Compose's UI clock while DataStore's caller-context transform completes.
             // A blocking Flow.first here can park that transform and create a false timeout.
-            compose.waitUntil(15_000) { read.isCompleted }
+            try { compose.waitUntil(15_000) { read.isCompleted } }
+            catch (failure: Throwable) { throw AssertionError("Stored settings did not match within 15s; last observed=${observed.get()}", failure) }
             return runBlocking { read.await() }
         } finally { scope.cancel() }
     }
