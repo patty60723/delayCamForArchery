@@ -1,5 +1,5 @@
 """Decode real H.264 segments in desktop Chromium; exercise viewing and recovery, never send controls."""
-import argparse, json, os, threading, time
+import argparse, json, math, os, struct, threading, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from playwright.sync_api import sync_playwright
@@ -13,6 +13,26 @@ root = Path(__file__).resolve().parents[1]
 assets = root/'android/app/src/main/assets/viewer'
 out = Path(a.output); out.mkdir(parents=True, exist_ok=True)
 media = Path(a.media).read_bytes()
+def boxes(start, end):
+    while start + 8 <= end:
+        size, kind = struct.unpack_from('>I4s', media, start)
+        header = 8
+        if size == 1: size = struct.unpack_from('>Q', media, start+8)[0]; header = 16
+        elif size == 0: size = end-start
+        if size < header or start+size > end: raise ValueError('Invalid MP4 box')
+        yield kind, start+header, start+size
+        start += size
+moov = next((begin,end) for kind,begin,end in boxes(0,len(media)) if kind == b'moov')
+mvhd = next(begin for kind,begin,end in boxes(*moov) if kind == b'mvhd')
+version = media[mvhd]
+if version == 0: timescale,duration = struct.unpack_from('>II',media,mvhd+12)
+elif version == 1: timescale,duration = struct.unpack_from('>IQ',media,mvhd+20)
+else: raise ValueError('Unsupported MP4 movie header')
+segment_ms = round(duration*1000/timescale)
+if segment_ms <= 0: raise ValueError('Empty media duration')
+configured_delay = max(2,math.ceil(segment_ms/1000)+1)
+age_limit = configured_delay*1000+3500
+print('BROWSER_MEDIA_TIMING',json.dumps(dict(segmentMs=segment_ms,delaySec=configured_delay)),flush=True)
 control = dict(start=time.time()*1000, epoch='test-1', fail=False, expire=False, status_calls=0, ids=[], joins={}, latest_join=None)
 base = '/v/' + 'b'*48 + '/'
 class Handler(BaseHTTPRequestHandler):
@@ -41,10 +61,10 @@ class Handler(BaseHTTPRequestHandler):
             control['status_calls'] += 1
             if control['fail']: self.send_error(503); return
             now = time.time()*1000
-            total = int((now-control['start'])/1000)
-            data = dict(protocol=1, epoch=control['epoch'], nowMs=now, active=True, delaySec=2,
-                        pictureMode='FIT', segments=[dict(id=i, startMs=control['start']+i*1000,
-                            endMs=control['start']+(i+1)*1000, durationMs=1000, aspect=4/3)
+            total = int((now-control['start'])/segment_ms)
+            data = dict(protocol=1, epoch=control['epoch'], nowMs=now, active=True, delaySec=configured_delay,
+                        pictureMode='FIT', segments=[dict(id=i, startMs=control['start']+i*segment_ms,
+                            endMs=control['start']+(i+1)*segment_ms, durationMs=segment_ms, aspect=4/3)
                             for i in range(max(0,total-45),total)])
             body=json.dumps(data).encode(); mime='application/json'
         elif route.startswith('segment/'):
@@ -100,9 +120,10 @@ try:
         page.wait_for_function('!document.querySelector("#notice").hidden',timeout=5000)
         page.wait_for_function('document.querySelector("#film").videoWidth>0 && document.querySelector("#film").style.opacity==="1"',timeout=15000)
         check('h264_decodes_after_explicit_start',True)
-        first=len(set(control['ids'])); page.wait_for_timeout(8500)
-        check('consecutive_segments_play',len(set(control['ids']))-first>=5)
-        check('delay_drift_bounded',page.evaluate('hostNow()-sourceTime()')<5500)
+        first=len(set(control['ids'])); watch_ms=max(8500,segment_ms*4+1500)
+        page.wait_for_timeout(watch_ms)
+        check('consecutive_segments_play',len(set(control['ids']))-first>=max(3,int(watch_ms/segment_ms)-1))
+        check('delay_drift_bounded',page.evaluate('hostNow()-sourceTime()')<age_limit)
         page.screenshot(path=str(out/'viewer-desktop.png'))
         rect=page.locator('#stage').bounding_box()
         page.get_by_role('button',name='操作',exact=True).click()
@@ -120,13 +141,13 @@ try:
         check('disconnect_is_explicit',not page.locator('#notice').is_hidden())
         control['fail']=False
         page.wait_for_function('document.querySelector("#status").textContent.includes("延遲觀看") && document.querySelector("#film").style.opacity==="1"',timeout=15000)
-        check('network_recovers_at_current_delay',page.evaluate('hostNow()-sourceTime()')<5500)
+        check('network_recovers_at_current_delay',page.evaluate('hostNow()-sourceTime()')<age_limit)
         control['expire']=True
         deadline=time.monotonic()+15
         while control['expire'] and time.monotonic()<deadline:
             page.wait_for_timeout(100)
         check('expired_response_was_exercised',not control['expire'])
-        page.wait_for_function('!loading && current!==null && document.querySelector("#film").style.opacity==="1" && hostNow()-sourceTime()<5500',timeout=15000)
+        page.wait_for_function(f'!loading && current!==null && document.querySelector("#film").style.opacity==="1" && hostNow()-sourceTime()<{age_limit}',timeout=15000)
         check('expired_segment_recovers',True)
         control['epoch']='test-2'
         page.wait_for_function('epoch==="test-2" && !loading && document.querySelector("#film").style.opacity==="1"',timeout=15000)

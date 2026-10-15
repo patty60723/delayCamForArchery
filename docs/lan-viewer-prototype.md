@@ -47,3 +47,5 @@ viewer.js 以拍攝端時鐘及 delaySec 選目標片段，不重複加延遲；
 APK 版本0.3.0-lan-viewer-test、versionCode19、package com.archery.delaycam.lanviewer、名稱「多機19·箭影」。原測試18為 com.archery.delaycam.fastresume，故可並存。最終 CI 與下載連結完成後補上。
 
 電腦短位址入口遵循原提案的拍攝端確認加入：第一次要求先等待本機批准，拒絕可重新要求。這是本次連線確認，並未記住永久電腦身分。完整觀看連結／QR仍含本次權限，只有分享給自己的裝置；電腦建議使用上述短位址確認流程。
+
+已用下載的實際 Android H.264 片段在本機 Chromium 通過18項檢查。測試從 MP4 mvhd 讀實際媒體長度，依長度建立來源時間與交接次數；不能把模擬器2～4.5秒的片段假設為1秒。相機片段本身可解碼，真實片長測試結果位於 docs/lan-viewer-browser-real-camera-local-results.json。
