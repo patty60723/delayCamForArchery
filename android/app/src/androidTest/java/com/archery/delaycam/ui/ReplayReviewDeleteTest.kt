@@ -24,10 +24,14 @@ import com.archery.delaycam.state.SavePhase
 import com.archery.delaycam.ui.playback.CONTENT_ASPECT_KEY
 import com.archery.delaycam.ui.replay.ReplayScreen
 import com.archery.delaycam.ui.theme.DelayCamTheme
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withTimeout
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -52,7 +56,7 @@ class ReplayReviewDeleteTest {
             vm = ViewModelProvider(owner, ViewModelProvider.AndroidViewModelFactory(context.applicationContext as Application))
                 .get(DelayCamViewModel::class.java)
         }
-        val loaded = runBlocking { withTimeout(5_000) { SettingsRepository(context).settingsFlow.first() } }
+        val loaded = awaitStoredSettings(context) { true }
         compose.waitUntil(5_000) { vm.settings.value == loaded }
         val store = ImmutableSegmentStore(context.cacheDir, "replay_delete_${UUID.randomUUID()}")
         val file = store.allocate()
@@ -92,7 +96,7 @@ class ReplayReviewDeleteTest {
             compose.onNodeWithText("返回練習").assertIsDisplayed()
             compose.onNodeWithText("刪除單箭").assertIsDisplayed().assertIsEnabled()
             compose.runOnIdle { vm.updateSettings { it.copy(pictureMode = PictureMode.FIT) } }
-            runBlocking { withTimeout(5_000) { SettingsRepository(context).settingsFlow.first { it.pictureMode == PictureMode.FIT } } }
+            awaitStoredSettings(context) { it.pictureMode == PictureMode.FIT }
             compose.waitUntil(5_000) { vm.settings.value.pictureMode == PictureMode.FIT }
             val fitPixels = compose.onNodeWithTag("review-video").captureToImage().toPixelMap()
             val fitEdge = fitPixels[20, fitPixels.height / 2]
@@ -101,7 +105,7 @@ class ReplayReviewDeleteTest {
             val replayItem = compose.runOnIdle { vm.replayPlayer.currentMediaItem }
             val generation = field(vm, "bufferGeneration")
             compose.runOnIdle { vm.updateSettings { it.copy(pictureMode = PictureMode.FILL) } }
-            runBlocking { withTimeout(5_000) { SettingsRepository(context).settingsFlow.first { it.pictureMode == PictureMode.FILL } } }
+            awaitStoredSettings(context) { it.pictureMode == PictureMode.FILL }
             compose.waitUntil(5_000) { vm.settings.value.pictureMode == PictureMode.FILL }
             val fillPixels = compose.onNodeWithTag("review-video").captureToImage().toPixelMap()
             val fillEdge = fillPixels[20, fillPixels.height / 2]
@@ -139,6 +143,18 @@ class ReplayReviewDeleteTest {
             store.close()
             runBlocking { SettingsRepository(context).save(loaded) }
         }
+    }
+
+    private fun awaitStoredSettings(context: android.content.Context,
+        predicate: (com.archery.delaycam.settings.AppSettings) -> Boolean): com.archery.delaycam.settings.AppSettings {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        val read = scope.async { SettingsRepository(context).settingsFlow.first { predicate(it) } }
+        try {
+            // Drive Compose's UI clock while DataStore's caller-context transform completes.
+            // A blocking Flow.first here can park that transform and create a false timeout.
+            compose.waitUntil(15_000) { read.isCompleted }
+            return runBlocking { read.await() }
+        } finally { scope.cancel() }
     }
 
     private fun screenshot(name: String) {
