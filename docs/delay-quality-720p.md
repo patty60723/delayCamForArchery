@@ -23,4 +23,12 @@
 
 新增JVM驗證方向共用畫布、上限與降級順序；原生驗證RGBA顏色／padding／旋轉／越界、手勢副本生命週期、1280畫布有效區域。真實MediaCodec測試從直向開始再轉橫向，檢查同一codec、1280正方形來源、720×1280／1280×720標準MP4，並解碼四像素黑白條檢查細節沒有被轉向縮小抹掉。既有CameraX小窗測試改用正式RGBA與解析度設定，確認收起／回放／返回仍收到能轉換的畫格。其餘回放、刪除、錄影與旋轉流程維持完整回歸測試。
 
-CI結果與APK連結待完成後補入。測試包識別：測試14·箭影，com.archery.delaycam.fastresume，版本0.2.10-fast-return-test，versionCode14。沿用固定簽章，通過簽章檢查後才提供下載，可覆蓋測試13並保留原設定及影片；正式舊包可並存。
+CI：[38692371702](https://github.com/patty60723/delayCamForArchery/actions/runs/38692371702)，實際來源commit `dc7bc3fa396b0370038805d04e3c31449d7a3882`，tree `5718a123088234e707b554f491dcfc33ab6899ad`。47項JVM＋43項Android API34原生測試，共90項，0失敗、0錯誤、0跳過。建置與原生測試job均成功；DESIGN lint、固定簽章與正式／測試包並存安裝檢查通過。
+
+原生報告中720p轉向及細線條輸出測試通過（16.65秒）。實際MainActivity的CameraX log顯示1280×960、RGBA format=1，編碼1280×1280、fallback=false；旋轉到0／270／180度仍維持原編碼器與緩衝，真正背景返回才依原規則建立新session。這是模擬器結果，不代表已量到使用者Pixel的實際解析度。原生報告及橫向截圖已下載核對。
+
+[APK ZIP](https://github.com/patty60723/delayCamForArchery/actions/runs/38692371702/artifacts/11952383000)（解壓縮後安裝app-debug.apk）；[原生測試報告與截圖](https://github.com/patty60723/delayCamForArchery/actions/runs/38692371702/artifacts/11953470688)。APK artifact至2026-10-29有效。
+
+APK SHA-256：`ceff50d95c8fed9e5fdc98de9dff211605569bc1e9f5a360cdc6e241ce2d0e81`；簽章憑證SHA-256：`a2e1d47174b2a24a99045fd4795ba37f97f115d3143733067a4859ce8555b042`。
+
+測試包識別：測試14·箭影，com.archery.delaycam.fastresume，版本0.2.10-fast-return-test，versionCode14。沿用固定簽章，通過簽章檢查後才提供下載，可覆蓋測試13並保留原設定及影片；正式舊包可並存。

@@ -75,3 +75,8 @@
 - 前一輪相同功能測試（[run 38259713282](https://github.com/patty60723/delayCamForArchery/actions/runs/38259713282)）連續三次返回的首畫格等待為 208、169、273 ms；這是已完成測試影片的模擬器數據，不代表 Pixel 實際攝影管線或效能保證。
 
 [PR #6](https://github.com/patty60723/delayCamForArchery/pull/6) 保留 draft 供並存測試，尚未合併／切換正式預設。Pixel 的發熱、連續練習、真人手勢辨識與實際恢復時間仍以使用者對照測試為準。未加入多裝置串流；下一步依本次回饋修正，再做熱點＋瀏覽器觀看原型。
+
+
+## 0.2.10 測試14：延遲畫質
+
+目前提供測試14·箭影，code14，沿用fastresume套件與固定簽章，可覆蓋測試13。720p目標來源、RGBA移除JPEG壓縮與轉向保留細節的修正、限制及90項通過證據見[delay-quality-720p.md](delay-quality-720p.md)。下載：[APK ZIP](https://github.com/patty60723/delayCamForArchery/actions/runs/38692371702/artifacts/11952383000)。來源dc7bc3fa396b0370038805d04e3c31449d7a3882；正式版與多裝置原型不合併到此包。
