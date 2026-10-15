@@ -6,21 +6,28 @@ import androidx.camera.core.resolutionselector.AspectRatioStrategy
 import androidx.camera.core.resolutionselector.ResolutionSelector
 import androidx.camera.core.resolutionselector.ResolutionStrategy
 
-/** 4:3 source retains 1280x720 after a 16:9 crop, with a bounded CPU/memory cost. */
-fun delayImageAnalysis(): ImageAnalysis = ImageAnalysis.Builder()
-    .setResolutionSelector(ResolutionSelector.Builder()
-        .setAspectRatioStrategy(AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY)
-        .setResolutionStrategy(ResolutionStrategy(Size(1280, 960),
+/** Request the selected source ratio. Never silently accept another ratio. */
+fun sourceResolutionSelector(aspect: com.archery.delaycam.settings.CaptureAspect): ResolutionSelector =
+    ResolutionSelector.Builder()
+        .setAspectRatioStrategy(AspectRatioStrategy(
+            if (aspect == com.archery.delaycam.settings.CaptureAspect.SIXTEEN_NINE)
+                androidx.camera.core.AspectRatio.RATIO_16_9 else androidx.camera.core.AspectRatio.RATIO_4_3,
+            AspectRatioStrategy.FALLBACK_RULE_NONE))
+        .setResolutionStrategy(ResolutionStrategy(Size(1280, if (aspect == com.archery.delaycam.settings.CaptureAspect.SIXTEEN_NINE) 720 else 960),
             ResolutionStrategy.FALLBACK_RULE_CLOSEST_LOWER_THEN_HIGHER))
         .setResolutionFilter { sizes, _ ->
-            // Keep CameraX's ordering and negotiation with Preview. An unusual camera
-            // with no size under budget uses its smallest available size.
-            sizes.filter { withinCaptureBudget(it.width, it.height) }
-                .ifEmpty { listOfNotNull(sizes.minByOrNull { it.width.toLong() * it.height }) }
-        }.build())
-    .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
-    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-    .build()
+            val matching = sizes.filter { matchesSourceAspect(it.width, it.height, aspect) }
+            matching.filter { withinCaptureBudget(it.width, it.height) }
+                .ifEmpty { listOfNotNull(matching.minByOrNull { it.width.toLong() * it.height }) }
+        }.build()
+
+fun delayImageAnalysis(aspect: com.archery.delaycam.settings.CaptureAspect = com.archery.delaycam.settings.CaptureAspect.FOUR_THREE): ImageAnalysis =
+    ImageAnalysis.Builder().setResolutionSelector(sourceResolutionSelector(aspect))
+        .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
+        .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST).build()
+
+fun cameraPreview(aspect: com.archery.delaycam.settings.CaptureAspect = com.archery.delaycam.settings.CaptureAspect.FOUR_THREE): androidx.camera.core.Preview =
+    androidx.camera.core.Preview.Builder().setResolutionSelector(sourceResolutionSelector(aspect)).build()
 
 internal fun withinCaptureBudget(width: Int, height: Int): Boolean =
     maxOf(width, height) <= 1280 && minOf(width, height) <= 960

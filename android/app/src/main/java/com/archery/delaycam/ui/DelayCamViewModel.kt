@@ -42,6 +42,7 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
@@ -221,7 +222,15 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
      * too, matching the web prototype's "buffer runs regardless of screen"
      * behaviour.
      */
-    val previewUseCase: Preview = Preview.Builder().setTargetAspectRatio(androidx.camera.core.AspectRatio.RATIO_4_3).build()
+    private val initialSettings = CompletableDeferred<Unit>()
+    suspend fun awaitInitialSettings() = initialSettings.await()
+    private val _previewSource = MutableStateFlow(com.archery.delaycam.camera.cameraPreview())
+    val previewSource: StateFlow<Preview> = _previewSource.asStateFlow()
+    val previewUseCase: Preview get() = _previewSource.value
+    private val _cameraSourceStatus = MutableStateFlow(com.archery.delaycam.camera.CameraSourceStatus())
+    val cameraSourceStatus = _cameraSourceStatus.asStateFlow()
+    fun publishCameraPreview(preview: Preview) { _previewSource.value = preview }
+    fun reportCameraSource(status: com.archery.delaycam.camera.CameraSourceStatus) { _cameraSourceStatus.value = status }
 
     init {
         viewModelScope.launch {
@@ -230,6 +239,7 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
                 pendingSettings = null
                 _settings.value = loaded
                 applyBufferWindow(loaded)
+                initialSettings.complete(Unit)
             }
         }
         viewModelScope.launch { refreshGallery() }

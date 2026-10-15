@@ -16,6 +16,17 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
+import com.archery.delaycam.camera.CameraSourceStatus
+import com.archery.delaycam.camera.RecordingPhase
+import com.archery.delaycam.camera.bindPreferredSource
+import com.archery.delaycam.camera.cameraPreview
+import com.archery.delaycam.settings.CaptureAspect
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -43,8 +54,8 @@ class MainActivity : ComponentActivity() {
 
     private val viewModel: DelayCamViewModel by viewModels()
     private var cameraBound = false
-    private var lastLoggedRotationDegrees = -1
-    private var imageAnalysis: ImageAnalysis? = null
+    private var boundRequest: CaptureAspect? = null
+    @Volatile private var imageAnalysis: ImageAnalysis? = null
     private val displayManager by lazy { applicationContext.getSystemService(DisplayManager::class.java) }
     private val rotationHandler = Handler(Looper.getMainLooper())
     private var lastAppliedRotation = -1
@@ -128,9 +139,16 @@ class MainActivity : ComponentActivity() {
 
             DelayCamTheme {
                 if (hasCameraPermission) {
-                    // Bound ONCE for the Activity's whole lifetime, independent of which
-                    // Compose screen is currently shown - see DelayCamViewModel.previewUseCase.
-                    LaunchedEffect(Unit) { bindCameraOnce() }
+                    LaunchedEffect(Unit) {
+                        viewModel.awaitInitialSettings()
+                        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                            combine(viewModel.settings.map { it.captureAspect }.distinctUntilChanged(),
+                                viewModel.recordingPhase) { aspect, phase -> aspect to phase }
+                                .collect { (aspect, phase) ->
+                                    if (!cameraBound || phase == RecordingPhase.IDLE) bindCamera(aspect)
+                                }
+                        }
+                    }
                     DelayCamNavHost(viewModel = viewModel)
                 } else {
                     CameraPermissionGate(onRequestPermission = {
@@ -141,62 +159,68 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private suspend fun bindCameraOnce() {
-        if (cameraBound) return
-        cameraBound = true
+    private suspend fun bindCamera(requested: CaptureAspect) {
+        if (cameraBound && boundRequest == requested) return
+        viewModel.reportCameraSource(CameraSourceStatus(requested))
         try {
-            val cameraProvider = awaitCameraProvider()
-
-            val imageAnalysis = delayImageAnalysis()
-            this.imageAnalysis = imageAnalysis
-            updateCameraRotation()
-            // One RGBA camera stream feeds the continuous encoder and a smaller
-            // independent gesture image; no extra camera use case or JPEG conversion.
-            imageAnalysis.setAnalyzer(viewModel.cameraAnalysisExecutor) { proxy ->
+            val provider = awaitCameraProvider()
+            val oldAnalysis = imageAnalysis
+            imageAnalysis = null
+            oldAnalysis?.clearAnalyzer()
+            oldAnalysis?.let { provider.unbind(it) }
+            provider.unbind(viewModel.previewUseCase)
+            cameraBound = false
+            val (source, analysis) = bindPreferredSource(requested) { candidate ->
+                val nextAnalysis = delayImageAnalysis(candidate)
+                val nextPreview = cameraPreview(candidate)
+                imageAnalysis = nextAnalysis
+                viewModel.publishCameraPreview(nextPreview)
+                updateCameraRotation()
+                installAnalyzer(nextAnalysis, requested, candidate)
                 try {
-                    val sessionId = viewModel.cameraSessionForFrame() ?: return@setAnalyzer
-                    // Reported "delayed view upside-down + both gestures dead"
-                    // (they likely share one cause: gesture recognition reads
-                    // the exact same bitmap the encoder draws, so a
-                    // consistently-wrong rotation would break both at once).
-                    // Logging the raw value CameraX reports rather than
-                    // guessing a third time at front-camera rotation math -
-                    // this is diagnostic only, the rotation logic itself is
-                    // unchanged pending what this shows.
-                    val rotationDegrees = proxy.imageInfo.rotationDegrees
-                    if (rotationDegrees != lastLoggedRotationDegrees) {
-                        lastLoggedRotationDegrees = rotationDegrees
-                        Log.d(
-                            "MainActivity",
-                            "camera frame ${proxy.width}x${proxy.height}, format=${proxy.format}, target=1280x960 (720p crop), " +
-                                "imageInfo.rotationDegrees=$rotationDegrees"
-                        )
-                    }
-                    val bitmap = proxy.toRotatedBitmap()
-                    val timestampMs = proxy.imageInfo.timestamp / 1_000_000L
-                    viewModel.onCameraFrame(bitmap, timestampMs, sessionId)
-                    // Hardware Canvas submission is asynchronous. Drop this reference
-                    // naturally; recycle() here can invalidate pixels still in GPU use.
-                } catch (e: Exception) {
-                    Log.w("MainActivity", "frame conversion failed, skipping this frame", e)
-                } finally {
-                    proxy.close()
+                    provider.bindToLifecycle(this, CameraSelector.DEFAULT_FRONT_CAMERA, nextPreview, nextAnalysis)
+                    val size = nextAnalysis.resolutionInfo?.resolution
+                    Log.i("MainActivity", "source request=$requested bound=$candidate actual=$size")
+                    nextAnalysis
+                } catch (failure: Exception) {
+                    nextAnalysis.clearAnalyzer()
+                    imageAnalysis = null
+                    provider.unbind(nextPreview, nextAnalysis)
+                    Log.w("MainActivity", "source request=$requested candidate=$candidate failed", failure)
+                    throw failure
                 }
             }
-
-            // Front camera: the whole point of the delay mirror (spec 2.1) is the
-            // archer looks at the screen like a mirror, which only reads correctly
-            // if the camera facing them is the one doing the filming.
-            cameraProvider.unbindAll()
-            cameraProvider.bindToLifecycle(
-                this,
-                CameraSelector.DEFAULT_FRONT_CAMERA,
-                viewModel.previewUseCase,
-                imageAnalysis,
-            )
-        } catch (e: Exception) {
-            Log.e("MainActivity", "CameraX bind failed", e)
+            imageAnalysis = analysis
+            cameraBound = true
+            boundRequest = requested
+            viewModel.reportCameraSource(CameraSourceStatus(requested, source, switching = false))
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (failure: Exception) {
             cameraBound = false
+            viewModel.reportCameraSource(CameraSourceStatus(requested, switching = false, failed = true))
+            Log.e("MainActivity", "Camera source negotiation failed", failure)
+        }
+    }
+
+    private fun installAnalyzer(analysis: ImageAnalysis, requested: CaptureAspect, source: CaptureAspect) {
+        var loggedRotation = -1
+        analysis.setAnalyzer(viewModel.cameraAnalysisExecutor) { proxy ->
+            try {
+                // A detached analyzer must not submit stale source frames after a switch.
+                if (imageAnalysis !== analysis) return@setAnalyzer
+                val sessionId = viewModel.cameraSessionForFrame() ?: return@setAnalyzer
+                val rotation = proxy.imageInfo.rotationDegrees
+                if (rotation != loggedRotation) {
+                    loggedRotation = rotation
+                    Log.i("MainActivity", "camera frame ${proxy.width}x${proxy.height} format=${proxy.format} " +
+                        "requested=$requested source=$source rotation=$rotation")
+                }
+                val bitmap = proxy.toRotatedBitmap()
+                viewModel.onCameraFrame(bitmap, proxy.imageInfo.timestamp / 1_000_000L, sessionId)
+                // Hardware Canvas may still be using the pixels: no immediate recycle().
+            } catch (failure: Exception) {
+                Log.w("MainActivity", "frame conversion failed, skipping this frame", failure)
+            } finally { proxy.close() }
         }
     }
 

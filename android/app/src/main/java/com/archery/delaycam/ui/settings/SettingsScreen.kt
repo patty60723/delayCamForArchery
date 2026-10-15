@@ -32,6 +32,7 @@ import com.archery.delaycam.ui.DelayCamViewModel
 fun SettingsScreen(viewModel: DelayCamViewModel, onBack: () -> Unit) {
     val settings by viewModel.settings.collectAsState()
     val recordingPhase by viewModel.recordingPhase.collectAsState()
+    val sourceStatus by viewModel.cameraSourceStatus.collectAsState()
 
     Column(
         modifier = Modifier
@@ -75,7 +76,7 @@ fun SettingsScreen(viewModel: DelayCamViewModel, onBack: () -> Unit) {
         )
 
         com.archery.delaycam.ui.components.CaptureAspectControl(settings.captureAspect,
-            recordingPhase == com.archery.delaycam.camera.RecordingPhase.IDLE) { aspect ->
+            recordingPhase == com.archery.delaycam.camera.RecordingPhase.IDLE, sourceStatus) { aspect ->
             viewModel.updateSettings { it.copy(captureAspect = aspect) }
         }
         com.archery.delaycam.ui.components.PictureModeControl(settings.pictureMode) { mode ->

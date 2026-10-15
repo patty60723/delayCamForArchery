@@ -62,6 +62,7 @@ fun DelayCamNavHost(viewModel: DelayCamViewModel) {
     }
     val appState by viewModel.appState.collectAsState()
     val toast by viewModel.toast.collectAsState()
+    val previewSource by viewModel.previewSource.collectAsState()
     val recordingPhase by viewModel.recordingPhase.collectAsState()
     val recordingElapsed by viewModel.recordingElapsedSec.collectAsState()
     val recordingSave by viewModel.recordingSave.collectAsState()
@@ -106,7 +107,7 @@ fun DelayCamNavHost(viewModel: DelayCamViewModel) {
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        PracticeCameraLayout(viewModel.previewUseCase, live = route == Routes.LIVE) { previewBounds ->
+        PracticeCameraLayout(previewSource, live = route == Routes.LIVE) { previewBounds ->
         RecordingScreenLayout(
             practice = route == Routes.LIVE || route == Routes.REPLAY || route == Routes.PLAYER,
             recording = { compact, modifier ->

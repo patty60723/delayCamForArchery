@@ -92,3 +92,12 @@ ViewModel settings 收集忽略尚未保存的舊值，避免快速切換時先�
 ## Continuous delay playback (0.2.11)
 
 DelayedPlaybackController只對首次開始播放計時（首段endedAt＋delay，維持原有初次延遲），完成的片段立即加入同一播放清單並持有lease；計時前維持IDLE、不prepare，不提早顯示畫格。開始後由連續媒體時間軸播放已預載的下一段，取代每段分別延後加入導致佇列耗盡／重新緩衝。沒有未完成檔案進入清單，不新增相機／編碼器／播放器。重置取消首次timer、清空佇列與釋放lease；快速返回延續原有目標來源時間；真正捕捉缺段仍可能等待，下一段到達時由ENDED接回。MainActivity不再於硬體Canvas提交後立即recycle高解析Bitmap；GPU尚未完成讀取時由正常引用生命週期保護像素。實際手機黑閃的因果仍需新版實測，不能以自動測試宣稱已確認所有原因。
+
+
+## Requested camera source (0.2.12)
+
+使用者明確要求依設定向手機要求16:9／4:3來源，16:9無法使用時回到4:3。CaptureQuality / CameraSourcePolicy是來源尺寸／退回順序的擁有者；MainActivity只在初次進入或取景比例變更重綁Preview＋ImageAnalysis。兩者要求相同比例，16:9以1280×720、4:3以1280×960為目標，KEEP_ONLY_LATEST／RGBA及有上限的解析度選擇維持。16:9只接受該比例來源，失敗清理候選後僅試一次4:3，權限與取消不重試；兩者失敗由來源狀態顯示重開方向，下一次前景可重試，不自動改寫使用者的captureAspect設定。退回4:3來源時，若仍選16:9輸出就依原取景裁切；無法保證感光元件視角或無裁切。
+
+ViewModel的previewSource及cameraSourceStatus是預覽use case與實際來源狀態的共享來源；CaptureAspectControl顯示目前協商比例、切換與失敗。首次相機綁定等待DataStore設定就緒，不先用預設值綁一次。設定改變可能有短暫相機空窗，主編碼器、前景session、已捕捉緩衝與播放器不主動重置；錄影中依既有規則禁止切換。LiveCameraPreview在同一PreviewView中以DisposableEffect接／解不同Preview的SurfaceProvider，不因來源切換重建小窗。旋轉只改targetRotation；其他設定不重綁。舊analyzer以identity拒絕已脫離來源的影格。
+
+驗證由CameraSourcePolicyTest、CameraSourceRequestTest與RotationContinuityTest負責，含真實CameraX協商與輸入比例、受控模擬的16:9不支援分支、同PreviewView持續影像、來源切換保留編碼器／緩衝、錄影中禁用與旋轉不中斷。模擬器上的受控失敗不宣稱等同所有手機的不支援情況。
