@@ -19,8 +19,8 @@ android {
         minSdk = 29
         targetSdk = 34
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        versionCode = 14
-        versionName = "0.2.10"
+        versionCode = 15
+        versionName = "0.2.11"
         buildConfigField("boolean", "FAST_RESUME_TRIAL", fastResumeTrial.toString())
         manifestPlaceholders["appIcon"] = if (fastResumeTrial) "@mipmap/ic_launcher_test" else "@mipmap/ic_launcher"
         manifestPlaceholders["appLabel"] = if (fastResumeTrial) "測試${versionCode}·箭影" else "@string/app_name"

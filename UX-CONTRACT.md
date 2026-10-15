@@ -84,6 +84,11 @@ ViewModel settings 收集忽略尚未保存的舊值，避免快速切換時先�
 
 ## Capture quality (0.2.10)
 
-延遲影像以1280×960的4:3來源為目標（16:9中心裁切1280×720，直向720×1280），CameraX仍會與Preview協商，裝置尺寸不足時向下選擇。ResolutionFilter限制來源長邊1280、短邊960；無任何預算內尺寸才用裝置最小尺寸。CameraX原生RGBA轉換取代JPEG；ImageProxyConversion處理rowStride、buffer offset及缺少尾端padding，旋轉後釋放暫存。手勢辨識使用長邊最多640的獨立影像，編碼返回後釋放原始高解析Bitmap，避免非同步辨識持有它。
+延遲影像以1280×960的4:3來源為目標（16:9中心裁切1280×720，直向720×1280），CameraX仍會與Preview協商，裝置尺寸不足時向下選擇。ResolutionFilter限制來源長邊1280、短邊960；無任何預算內尺寸才用裝置最小尺寸。CameraX原生RGBA轉換取代JPEG；ImageProxyConversion處理rowStride、buffer offset及缺少尾端padding，旋轉後釋放暫存。手勢辨識使用長邊最多640的獨立影像，手勢不持有原始高解析Bitmap；測試15撤回提交後立即recycle，讓其隨GPU／原生引用正常回收，避免非同步繪製讀取已釋放像素。
 
 連續編碼器的畫布改為來源長邊的正方形，上限1280，初始化先查詢AVC支援；不支援時向下選擇並記錄fallback。橫直切換及取景比例變更都保留同一MediaCodec與緩衝，不重新暖機。已知片段比例沿用共用播放與匯出政策去除內部黑邊；存入相簿的標準MP4仍使用所選4:3／16:9，不對外承諾正方形影片。混合／未知比例仍完整顯示畫布。舊影片不重編、不提高細節。30fps僅編碼設定，實際交付幀率、溫度、功耗及1080p仍需實機驗收。
+
+
+## Continuous delay playback (0.2.11)
+
+DelayedPlaybackController只對首次開始播放計時（首段endedAt＋delay，維持原有初次延遲），完成的片段立即加入同一播放清單並持有lease；計時前維持IDLE、不prepare，不提早顯示畫格。開始後由連續媒體時間軸播放已預載的下一段，取代每段分別延後加入導致佇列耗盡／重新緩衝。沒有未完成檔案進入清單，不新增相機／編碼器／播放器。重置取消首次timer、清空佇列與釋放lease；快速返回延續原有目標來源時間；真正捕捉缺段仍可能等待，下一段到達時由ENDED接回。MainActivity不再於硬體Canvas提交後立即recycle高解析Bitmap；GPU尚未完成讀取時由正常引用生命週期保護像素。實際手機黑閃的因果仍需新版實測，不能以自動測試宣稱已確認所有原因。

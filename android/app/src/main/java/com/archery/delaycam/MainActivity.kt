@@ -174,8 +174,9 @@ class MainActivity : ComponentActivity() {
                     }
                     val bitmap = proxy.toRotatedBitmap()
                     val timestampMs = proxy.imageInfo.timestamp / 1_000_000L
-                    try { viewModel.onCameraFrame(bitmap, timestampMs, sessionId) }
-                    finally { bitmap.recycle() }
+                    viewModel.onCameraFrame(bitmap, timestampMs, sessionId)
+                    // Hardware Canvas submission is asynchronous. Drop this reference
+                    // naturally; recycle() here can invalidate pixels still in GPU use.
                 } catch (e: Exception) {
                     Log.w("MainActivity", "frame conversion failed, skipping this frame", e)
                 } finally {

@@ -74,7 +74,7 @@ class GestureEngine(
         }
         try {
             // Inference owns a small independent image. Never retain the high-resolution
-            // capture bitmap asynchronously; the caller may recycle it after encoding.
+            // capture bitmap asynchronously; GPU submission may still reference its pixels.
             r.recognizeAsync(BitmapImageBuilder(gestureFrameCopy(bitmap)).build(), timestampMs)
         } catch (e: Exception) {
             synchronized(frameContexts) { frameContexts.remove(timestampMs) }

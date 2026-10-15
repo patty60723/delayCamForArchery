@@ -10,7 +10,7 @@
 - 由CameraX原生輸出RGBA_8888；ImageProxyConversion直接複製RGBA並旋轉，處理rowStride、pixelStride、buffer offset與最後一列缺少padding，保留原buffer游標。移除JPEG編解碼與品質90限制。
 - 編碼畫布用來源長邊正方形，上限1280，16像素對齊。1280×960來源的16:9畫面以1280×720放入畫布；直向720×1280亦可原尺寸容納。查詢MediaCodecList能力，若不支援逐級下降，不每次旋轉重啟codec。
 - 同一個持續H.264編碼器、8Mbps、30fps設定；片段仍共用SPS/PPS。正方形黑邊由既有有效影像比例移除；ClipExporter與整段錄影共用VideoAspectNormalizer，輸出真實4:3／16:9 MP4。
-- 手勢使用長邊最多640的獨立Bitmap，保持原比例，不持有720p捕捉影像；主影像同步繪至編碼surface後即可recycle。辨識模型、手勢映射、門檻、冷卻不變。
+- 手勢使用長邊最多640的獨立Bitmap，保持原比例，不持有720p捕捉影像；測試14在主影像提交後立即recycle；測試15已撤回此作法，因Hardware Canvas提交可能仍由GPU非同步讀取。讓Bitmap隨原生圖形引用生命週期正常回收，避免過早釋放。辨識模型、手勢映射、門檻、冷卻不變。
 - logcat記錄相機實際寬高／RGBA格式／rotation與編碼canvas／codec／fallback，確認目標有沒有實際協商成功。目標720p不等同所有前鏡頭都能達成720p。
 
 ## 成本與限制

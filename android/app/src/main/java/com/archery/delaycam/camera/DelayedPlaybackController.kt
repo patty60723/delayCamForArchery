@@ -14,7 +14,7 @@ import androidx.media3.exoplayer.ExoPlayer
 private const val TAG = "DelayedPlaybackController"
 
 /**
- * Baseline playback schedules completed segments after the configured delay.
+ * Baseline playback delays the initial start, then preloads completed segments.
  * Trial fast return replaces that queue at now-delay and then appends contiguous
  * finalized segments. Leases keep files immutable until all player readers finish.
  * All methods are confined to the player's main thread.
@@ -23,7 +23,8 @@ class DelayedPlaybackController(
     private val exoPlayer: ExoPlayer,
     private val getDelaySecMs: () -> Long,
 ) {
-    private val scheduled = mutableSetOf<String>()
+    private val queuedPaths = mutableSetOf<String>()
+    private var waitingForStart = false
     private val handler = Handler(Looper.getMainLooper())
     private data class Pinned(val ids: Set<String>, val lease: ImmutableSegmentStore.Lease)
     private val pinned = mutableListOf<Pinned>()
@@ -66,27 +67,31 @@ class DelayedPlaybackController(
             return true
         }
         val path = segment.file.absolutePath
-        if (!scheduled.add(path)) {
-            // Diagnostic for the still-remaining periodic stalls: this
-            // path is one of the ring buffer's reused filenames - if this
-            // ever fires, an earlier scheduled entry for the same slot
-            // hadn't fired yet when it wrapped back around, meaning this
-            // segment gets silently dropped (never reaches the player) and
-            // the ring buffer is about to overwrite the file the dropped
-            // entry still pointed at. Concrete, checkable cause if seen.
-            Log.w(TAG, "segment $path already scheduled - dropping this one (ring buffer wrapped before the earlier entry fired)")
+        if (!queuedPaths.add(path)) {
+            Log.w(TAG, "segment $path already queued, ignoring duplicate")
             return true
         }
         if (store != null) {
-            val lease = store.acquire(listOf(segment)) ?: run { scheduled.remove(path); return false }
+            val lease = store.acquire(listOf(segment)) ?: run { queuedPaths.remove(path); return false }
             pinned.add(Pinned(setOf(id(segment)), lease))
         }
-        val fireAtMs = segment.endedAtMs + getDelaySecMs()
-        val waitMs = (fireAtMs - System.currentTimeMillis()).coerceAtLeast(0)
-        handler.postDelayed({
-            scheduled.remove(path)
-            enqueue(segment)
-        }, waitMs)
+        val initial = exoPlayer.mediaItemCount == 0
+        if (initial) waitingForStart = true
+        // Completed files are available now: queue them now so Media3 can preload
+        // the next period. Per-file delay timers starved the decoder at boundaries.
+        enqueue(segment)
+        if (initial) {
+            // Retain the existing initial delay, but do not prepare/render an early
+            // first frame while waiting. Subsequent files follow the media timeline.
+            val waitMs = (segment.endedAtMs + getDelaySecMs() - System.currentTimeMillis()).coerceAtLeast(0)
+            handler.postDelayed({
+                waitingForStart = false
+                if (exoPlayer.mediaItemCount > 0) {
+                    exoPlayer.prepare()
+                    exoPlayer.playWhenReady = true
+                }
+            }, waitMs)
+        }
         return true
     }
 
@@ -94,14 +99,15 @@ class DelayedPlaybackController(
         val firstNewItemIndex = exoPlayer.mediaItemCount
         val wasEnded = exoPlayer.playbackState == Player.STATE_ENDED
         exoPlayer.addMediaItem(item(segment))
-        if (exoPlayer.playbackState == Player.STATE_IDLE) {
-            exoPlayer.prepare()
-        } else if (wasEnded) {
-            // Appending after the last item finished does not resume Media3 1.4.1.
-            // Seek to the newly added item, preserving the queue and delay.
-            exoPlayer.seekToDefaultPosition(firstNewItemIndex)
+        if (!waitingForStart) {
+            if (exoPlayer.playbackState == Player.STATE_IDLE) {
+                exoPlayer.prepare()
+            } else if (wasEnded) {
+                // A genuine capture gap can still exhaust the available files.
+                exoPlayer.seekToDefaultPosition(firstNewItemIndex)
+            }
+            exoPlayer.playWhenReady = true
         }
-        exoPlayer.playWhenReady = true
         trimPlayedItems()
     }
 
@@ -119,11 +125,14 @@ class DelayedPlaybackController(
             exoPlayer.removeMediaItems(0, current - 2)
         }
         val activeIds = (0 until exoPlayer.mediaItemCount).map { exoPlayer.getMediaItemAt(it).mediaId }.toSet()
+        val activePaths = (0 until exoPlayer.mediaItemCount).mapNotNull {
+            exoPlayer.getMediaItemAt(it).localConfiguration?.uri?.path
+        }.toSet()
+        queuedPaths.retainAll(activePaths)
         val iterator = pinned.iterator()
         while (iterator.hasNext()) {
             val pin = iterator.next()
-            // Scheduled segments have not entered the player yet.
-            if (pin.ids.none { it in activeIds } && pin.lease.segments.none { it.file.absolutePath in scheduled }) {
+            if (pin.ids.none { it in activeIds }) {
                 pin.lease.close()
                 iterator.remove()
             }
@@ -132,7 +141,8 @@ class DelayedPlaybackController(
 
     /** Cancel every old timer and reader; the caller decides whether to retain source history. */
     fun reset() {
-        scheduled.clear()
+        queuedPaths.clear()
+        waitingForStart = false
         handler.removeCallbacksAndMessages(null)
         exoPlayer.stop()
         exoPlayer.clearMediaItems()
