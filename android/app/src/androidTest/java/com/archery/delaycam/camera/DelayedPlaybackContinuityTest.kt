@@ -27,6 +27,12 @@ class DelayedPlaybackContinuityTest {
     private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
     private val context get() = instrumentation.targetContext
 
+    private fun onPlayerThread(predicate: () -> Boolean): Boolean {
+        var result = false
+        compose.runOnUiThread { result = predicate() }
+        return result
+    }
+
     private fun source(store: ImmutableSegmentStore, start: Long): SegmentInfo {
         val file = store.allocate()
         instrumentation.context.assets.open("clip-fixture.mp4").use { input ->
@@ -123,11 +129,11 @@ class DelayedPlaybackContinuityTest {
         try {
             compose.setContent { VideoPlayer(player, false, Modifier.fillMaxSize()) }
             compose.runOnIdle { assertTrue(controller.onSegmentFinalized(first, store)) }
-            compose.waitUntil(12_000) { player.playbackState == Player.STATE_ENDED }
+            compose.waitUntil(12_000) { onPlayerThread { player.playbackState == Player.STATE_ENDED } }
             val before = frames.get()
             val next = source(store, first.endedAtMs)
             compose.runOnIdle { assertTrue(controller.onSegmentFinalized(next, store)) }
-            compose.waitUntil(12_000) { player.currentMediaItem?.localConfiguration?.uri?.path == next.file.absolutePath && frames.get() >= before + 3 }
+            compose.waitUntil(12_000) { onPlayerThread { player.currentMediaItem?.localConfiguration?.uri?.path == next.file.absolutePath && frames.get() >= before + 3 } }
             compose.runOnIdle { assertNull(player.playerError) }
         } finally {
             compose.runOnUiThread { controller.reset(); player.release() }
