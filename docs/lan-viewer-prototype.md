@@ -6,7 +6,7 @@
 
 - Pixel 原有延遲、錄影、回放、畫廊多選與分享。
 - 同 Wi-Fi／Pixel 手機熱點上的電腦 Chrome／Edge，只讀延遲觀看。
-- 與手機相同的延遲目標，完整畫面／滿版、接回目前延遲、可收起控制。
+- 與手機相同的延遲目標，完整畫面／滿版、接回目前延遲、可收起控制。手機回放單箭時，電腦繼續看延遲來源，不自動跟隨單箭回放。
 - 分頁回前景、斷線重連、過期片段與來源 epoch 更新後恢復。
 - 停止觀看連線或手機 App 切背景時，關閉 server 並撤銷本次連結；旋轉保留連線。
 
@@ -42,6 +42,6 @@ viewer.js 以拍攝端時鐘及 delaySec 選目標片段，不重複加延遲；
 
 ## 驗證進度
 
-本機 Chromium 已用 H.264 合成影片通過13項實際瀏覽器檢查，結果位於 docs/lan-viewer-browser-local-results.json。GitHub CI 會編譯新 APK、執行 JVM 與原生回歸、驗證真實 CameraX→HTTP MP4、旋轉／停止／背景撤銷；再將 Android 實際片段送入電腦 Chromium 解碼與復原測試。localhost／模擬器不等同真實 Pixel→電腦無線測試，最後仍需你試裝。
+本機 Chromium 已用 H.264 合成影片通過14項實際瀏覽器檢查，結果位於 docs/lan-viewer-browser-local-results.json。GitHub CI 會編譯新 APK、執行 JVM 與原生回歸、驗證真實 CameraX→HTTP MP4、旋轉／停止／背景撤銷；再將 Android 實際片段送入電腦 Chromium 解碼與復原測試。localhost／模擬器不等同真實 Pixel→電腦無線測試，最後仍需你試裝。
 
 APK 版本0.3.0-lan-viewer-test、versionCode19、package com.archery.delaycam.lanviewer、名稱「多機19·箭影」。原測試18為 com.archery.delaycam.fastresume，故可並存。最終 CI 與下載連結完成後補上。

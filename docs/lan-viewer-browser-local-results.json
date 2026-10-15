@@ -8,6 +8,7 @@
     "escape_closes_panel_and_restores_focus": true,
     "disconnect_is_explicit": true,
     "network_recovers_at_current_delay": true,
+    "expired_response_was_exercised": true,
     "expired_segment_recovers": true,
     "new_source_epoch_recovers": true,
     "hidden_page_stops_polling": true,

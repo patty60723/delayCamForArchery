@@ -90,9 +90,12 @@ try:
         page.wait_for_function('document.querySelector("#status").textContent.includes("延遲觀看") && document.querySelector("#film").style.opacity==="1"',timeout=15000)
         check('network_recovers_at_current_delay',page.evaluate('hostNow()-sourceTime()')<5500)
         control['expire']=True
-        page.wait_for_function('document.querySelector("#status").textContent.includes("延遲觀看") && !loading && document.querySelector("#film").style.opacity==="1"',timeout=15000)
-        page.wait_for_timeout(2000)
-        check('expired_segment_recovers',not control['expire'] and page.evaluate('hostNow()-sourceTime()')<5500)
+        deadline=time.monotonic()+15
+        while control['expire'] and time.monotonic()<deadline:
+            page.wait_for_timeout(100)
+        check('expired_response_was_exercised',not control['expire'])
+        page.wait_for_function('!loading && current!==null && document.querySelector("#film").style.opacity==="1" && hostNow()-sourceTime()<5500',timeout=15000)
+        check('expired_segment_recovers',True)
         control['epoch']='test-2'
         page.wait_for_function('epoch==="test-2" && !loading && document.querySelector("#film").style.opacity==="1"',timeout=15000)
         check('new_source_epoch_recovers',True)
