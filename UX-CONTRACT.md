@@ -119,3 +119,20 @@ Canonical owners: GalleryScreen owns presentation and confirmation; GallerySelec
 ## Recording entry scope (0.2.14)
 
 DelayCamNavHost 依目前路由傳遞 RecordingControls.allowStart，僅 Routes.LIVE 為 true。RecordingControls 擁有同一錄影狀態與非練習頁變體；不在 GalleryScreen 額外隱藏或重做錄影列。沒有錄影／保存內容時不佔頂部高度，RecordingScreenLayout 的唯一導航 composition 位置不變。GalleryRecordingEntryTest 驗證真實導航練習→畫廊→返回→設定，並以共用元件驗證錄影停止、忙碌禁用與保存進度／成功／重試，確保沒有開始／繼續入口。
+
+
+## LAN viewer trial (0.3.0)
+
+| Capability | Canonical owner | Source of truth | Allowed variants | Verification |
+| --- | --- | --- | --- | --- |
+| Viewer session | DelayCamViewModel / LanViewerServer | 本節 | 手動開啟／關閉；背景撤銷；192-bit 本次觀看連結 | LanViewerServerTest / LanViewerIntegrationTest |
+| Viewer media | ViewerSegmentSource / ImmutableSegmentStore | 本節 | 已完成片段、獨立讀取 lease、GET/HEAD/Range | LanViewerServerTest / 實際相機 HTTP 與 Chromium 解碼 |
+| Browser playback | viewer.js | 本節與 DESIGN.md | 開始、FIT/FILL、接回目前延遲；只讀 | scripts/test-lan-viewer.py |
+
+只有 LAN_VIEWER_TRIAL 版本提供手動觀看連線；預設不開 server，拍攝與錄影仍由原本單一相機／編碼器擁有。開始前說明僅自己的 Wi-Fi／熱點、只讀觀看、影片保存在拍攝手機。連線網址含本次隨機 token；本輪不記住永久裝置，不自動重放控制指令，沒有遠端保存／錄影或檔案庫讀取路由。HTTP 本機明文，不用公開或不可信網路，不開外網服務。以明確 App 開啟／關閉入口控制觀看權限。
+
+背景、停止分享及 ViewModel 結束關閉 sockets 與撤銷 token；旋轉沿同一 server／相機工作階段。需要重新開啟時產生新連結；舊連結不能讀取新工作階段。metadata 不包含檔案路徑，影片讀取先取得不可覆寫 lease，過期片段為410。提供單一 Range／HEAD，拒絕任意路徑、寫入及跨來源請求。
+
+瀏覽器選同一來源目標時間（拍攝時間減 delaySec），不再加第二次延遲。網路與片段交接可能增加等待；累積落後過多時接回目前目標，不播放全部積壓歷史。載入後確實解碼首畫格才換掉保留畫面；中斷會標示最後畫面。輪詢在分頁隱藏停止、回前景恢復，epoch／delay 改變重新建立觀看。操作面板 Escape 還原按鈕焦點；不干擾拍攝端手勢與本機錄影。
+
+本輪驗收以電腦 Chrome／Edge 為目標，Chromium 自動測試；真實 Pixel→電腦 Wi-Fi／熱點由使用者試裝驗收。不能以 localhost 或模擬器測試宣稱已完成實際無線連線、Safari 相容性、永久配對或遠端控制。

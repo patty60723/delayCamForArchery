@@ -4,7 +4,8 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
-val fastResumeTrial = providers.gradleProperty("fastResumeTrial").orNull == "true"
+val lanViewerTrial = providers.gradleProperty("lanViewerTrial").orNull == "true"
+val fastResumeTrial = lanViewerTrial || providers.gradleProperty("fastResumeTrial").orNull == "true"
 
 android {
     namespace = "com.archery.delaycam"
@@ -19,11 +20,12 @@ android {
         minSdk = 29
         targetSdk = 34
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        versionCode = 18
-        versionName = "0.2.14"
+        versionCode = 19
+        versionName = "0.3.0"
         buildConfigField("boolean", "FAST_RESUME_TRIAL", fastResumeTrial.toString())
+        buildConfigField("boolean", "LAN_VIEWER_TRIAL", lanViewerTrial.toString())
         manifestPlaceholders["appIcon"] = if (fastResumeTrial) "@mipmap/ic_launcher_test" else "@mipmap/ic_launcher"
-        manifestPlaceholders["appLabel"] = if (fastResumeTrial) "測試${versionCode}·箭影" else "@string/app_name"
+        manifestPlaceholders["appLabel"] = if (lanViewerTrial) "多機${versionCode}·箭影" else if (fastResumeTrial) "測試${versionCode}·箭影" else "@string/app_name"
     }
 
     // CI pins a cached debug key so later test builds can update this package.
@@ -34,8 +36,8 @@ android {
 
     buildTypes {
         debug {
-            applicationIdSuffix = if (fastResumeTrial) ".fastresume" else ".delayfix3"
-            versionNameSuffix = if (fastResumeTrial) "-fast-return-test" else "-recording-ux"
+            applicationIdSuffix = if (lanViewerTrial) ".lanviewer" else if (fastResumeTrial) ".fastresume" else ".delayfix3"
+            versionNameSuffix = if (lanViewerTrial) "-lan-viewer-test" else if (fastResumeTrial) "-fast-return-test" else "-recording-ux"
         }
         release {
             isMinifyEnabled = false
@@ -105,6 +107,8 @@ dependencies {
 
     // --- Settings persistence (spec 4) ---
     implementation("androidx.datastore:datastore-preferences:1.1.1")
+
+    implementation("com.google.zxing:core:3.5.3")
 
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
