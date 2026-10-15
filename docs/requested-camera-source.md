@@ -18,4 +18,14 @@ App等待DataStore初始設定後才綁定，之後由captureAspect＋recordingP
 
 首次CI 38711772357：52 JVM通過；47原生中46通過，新來源協商／退回／來源提示及MainActivity切來源保留緩衝測試均通過。唯一失敗為既有ReplayReviewDeleteTest等待FILL偏好寫入15秒逾時。設定寫入改成Main按請求順序取得Mutex、IO執行DataStore transaction，避免DataStore transform依賴UI執行緒，並序列化快速切換。增加快速多次設定更改、最後選擇落盤與新ViewModel還原的原生測試；原有逾時斷言不放寬，補上最後觀察值以利診斷。此為針對寫入執行緒與順序的修正，不宣稱已從這份紀錄證明唯一因果。
 
-最終CI結果與下載待完成後補入。套件com.archery.delaycam.fastresume、versionCode16、0.2.12-fast-return-test，啟動器測試16·箭影。沿用固定簽章，驗證通過後可覆蓋測試15。
+最終[CI 38713429164](https://github.com/patty60723/delayCamForArchery/actions/runs/38713429164)：來源commit `19edeedd4b632c219f63707df37075f1c7f7e073`，tree `60c38724aa6a9d9cb2fe3820ce1e2cea36a3e511`。52 JVM＋48 Android API34原生測試，共100項，0失敗、0錯誤、0跳過；build與ui-tests均success。DESIGN lint、靜態介面strict audit、固定簽章與套件標籤／正式測試並存安裝均通過。
+
+已下載原生XML、logcat與截圖核對。MainActivity實際紀錄4:3→1280×960、16:9→1280×720，RGBA format=1；旋轉0／270／180維持同一1280×720來源。CameraSourceRequestTest真實來源／退回／同小窗12.278秒、提示與錄影鎖1.129秒；原回放FIT／FILL／直接刪除9.071秒、新設定快速切換與還原3.195秒，均通過。橫向錄影截圖已檢視；模擬器合成圖案不代表手機顏色或鏡頭視角。
+
+[APK ZIP](https://github.com/patty60723/delayCamForArchery/actions/runs/38713429164/artifacts/11962025279)（解壓後安裝app-debug.apk） · [原生報告與截圖](https://github.com/patty60723/delayCamForArchery/actions/runs/38713429164/artifacts/11961876728)。artifact至2026-10-29有效。
+
+APK SHA-256：`456e6458b973aeccfb8e70f76e953c4a93e67234ab56ed6530f65adf40a5f84e`；簽章憑證SHA-256：`a2e1d47174b2a24a99045fd4795ba37f97f115d3143733067a4859ce8555b042`。
+
+一般來源選擇限制長邊1280、短邊960；完全沒有預算內尺寸時仍用最小的相同比例尺寸，可能較大。測試16:9不支援分支為受控失敗＋真實4:3，不宣稱已在不支援16:9的實體手機完成驗收。Pixel實際支援、切換停頓、視角及長時間穩定度仍需手機確認。
+
+套件com.archery.delaycam.fastresume、versionCode16、0.2.12-fast-return-test，啟動器測試16·箭影。沿用固定簽章，驗證通過後可覆蓋測試15。

@@ -85,3 +85,8 @@
 ## 0.2.11 測試15：延遲黑閃修正
 
 測試15·箭影保留720p，將逐段延後加入改為首次延遲開始＋完成片段預載，並撤回GPU提交後立即回收Bitmap。套件及簽章不變，可覆蓋測試14。[APK ZIP](https://github.com/patty60723/delayCamForArchery/actions/runs/38707980442/artifacts/11960175272)；來源cae20426d3d00e09e5c1753972fc457e6f8415ea，47 JVM＋45原生測試共92項通過。[技術細節與已知限制](delay-black-flash.md)。僅模擬器驗證，不宣稱已確認Pixel上所有黑閃原因，請保持手機不動觀察新版並文字回覆結果即可，不需要上傳影片。
+
+
+## 0.2.12 測試16：依設定要求相機來源
+
+16:9優先要求真正16:9來源，不支援只試一次4:3；設定頁顯示實際來源／退回提示。取景比例改變會重新協商Preview＋ImageAnalysis，但保留同一編碼器／緩衝；旋轉不重綁，錄影中禁止切比例。另將偏好寫入序列化至IO，避免快速切換儲存順序問題。[APK ZIP](https://github.com/patty60723/delayCamForArchery/actions/runs/38713429164/artifacts/11962025279)，可覆蓋測試15；[來源與退回技術文件](requested-camera-source.md)。來源19edeedd4b632c219f63707df37075f1c7f7e073，52 JVM＋48原生共100項通過。退回4:3來源時，若仍選16:9輸出就仍需取景裁切；不承諾手機感光元件完全不裁切。
