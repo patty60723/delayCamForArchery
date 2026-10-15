@@ -9,7 +9,7 @@ import android.os.Looper
 import androidx.core.net.toUri
 import androidx.media3.common.MediaItem
 import androidx.media3.effect.MatrixTransformation
-import androidx.media3.effect.Presentation
+import androidx.media3.common.util.Size
 import androidx.media3.transformer.Composition
 import androidx.media3.transformer.EditedMediaItem
 import androidx.media3.transformer.Effects
@@ -42,8 +42,7 @@ object VideoAspectNormalizer {
         }
         val encodedAspect = width.toFloat() / height
         val aspect = requestedAspect?.takeIf { it.isFinite() && it > 0f } ?: encodedAspect
-        if (kotlin.math.abs(aspect - encodedAspect) < .001f &&
-            ranges.all { it.aspect == null || kotlin.math.abs(it.aspect - encodedAspect) < .001f })
+        if (kotlin.math.abs(aspect - encodedAspect) < .001f)
             return Result(source, ranges)
 
         val size = captureSize(width, height, aspect)
@@ -52,16 +51,21 @@ object VideoAspectNormalizer {
         try {
             withContext(Dispatchers.Main.immediate) {
                 suspendCancellableCoroutine<Unit> { continuation ->
-                    // Both matrix effects are combined in one GL pass. Remove known encoder
-                    // padding, then FIT each source orientation into the fixed output format.
-                    val fitPicture = MatrixTransformation { timeUs ->
-                        val contentAspect = ClipPresentationStore.aspectAt(ranges, timeUs / 1000L)
-                        val scale = activePictureScale(size.first.toFloat(), size.second.toFloat(), encodedAspect, contentAspect)
-                        Matrix().apply { setScale(scale, scale) }
+                    // Use one matrix: separate scale/presentation effects clip at each stage
+                    // and would discard visible pixels before the final output is sized.
+                    val fitPicture = object : MatrixTransformation {
+                        override fun configure(inputWidth: Int, inputHeight: Int): Size = Size(size.first, size.second)
+                        override fun getMatrix(timeUs: Long): Matrix {
+                            val contentAspect = ClipPresentationStore.aspectAt(ranges, timeUs / 1000L)
+                            val zoom = activePictureScale(size.first.toFloat(), size.second.toFloat(), encodedAspect, contentAspect)
+                            val outputAspect = size.first.toFloat() / size.second
+                            return Matrix().apply { setScale(
+                                minOf(1f, encodedAspect / outputAspect) * zoom,
+                                minOf(1f, outputAspect / encodedAspect) * zoom) }
+                        }
                     }
                     val edited = EditedMediaItem.Builder(MediaItem.fromUri(source.toUri()))
-                        .setEffects(Effects(emptyList(), listOf(fitPicture,
-                            Presentation.createForWidthAndHeight(size.first, size.second, Presentation.LAYOUT_SCALE_TO_FIT))))
+                        .setEffects(Effects(emptyList(), listOf(fitPicture)))
                         .build()
                     val transformer = Transformer.Builder(context.applicationContext)
                         .setVideoMimeType(MediaFormat.MIMETYPE_VIDEO_AVC)

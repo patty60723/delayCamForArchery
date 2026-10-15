@@ -67,10 +67,10 @@ class RotationContinuityTest {
                 compose.onNodeWithContentDescription("顯示操作").performClick()
                 compose.onNodeWithText("設定").performClick()
                 val beforeModeSession = vm.cameraSessionForFrame()
-                compose.onNodeWithText("16:9").performScrollTo().performClick().assertIsSelected()
-                runBlocking { repository.settingsFlow.first { it.captureAspect == CaptureAspect.SIXTEEN_NINE } }
                 val beforeModeGeneration = field(vm, "bufferGeneration")
                 val beforeModeEncoder = field(vm, "segmentEncoder")
+                compose.onNodeWithText("16:9").performScrollTo().performClick().assertIsSelected()
+                runBlocking { repository.settingsFlow.first { it.captureAspect == CaptureAspect.SIXTEEN_NINE } }
                 compose.onNodeWithText("滿版").performScrollTo().performClick().assertIsSelected()
                 runBlocking { repository.settingsFlow.first { it.pictureMode == PictureMode.FILL } }
                 compose.onNodeWithText("左下").performScrollTo().performClick().assertIsSelected()

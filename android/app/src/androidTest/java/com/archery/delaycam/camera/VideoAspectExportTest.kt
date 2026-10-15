@@ -27,6 +27,8 @@ class VideoAspectExportTest {
                     try {
                         assertEquals(4f / 3f, frame.width.toFloat() / frame.height, .02f)
                         assertTrue("Content must fill the output; encoder padding is removed", android.graphics.Color.green(frame.getPixel(frame.width / 2, frame.height / 2)) > 160)
+                        assertTrue("No second letterbox at the left edge", android.graphics.Color.green(frame.getPixel(3, frame.height / 2)) > 160)
+                        assertTrue("No second letterbox at the right edge", android.graphics.Color.green(frame.getPixel(frame.width - 4, frame.height / 2)) > 160)
                         // The source fixture has yellow/cyan boundary strips. FIT must preserve them.
                         val top = frame.getPixel(frame.width / 2, 3)
                         val bottom = frame.getPixel(frame.width / 2, frame.height - 4)
