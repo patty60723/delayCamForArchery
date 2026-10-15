@@ -16,6 +16,14 @@ DelayedPlaybackController保留原有首次開始時間（首段結束＋設定�
 
 新增真正Media3／TextureView原生測試：先將8個已完成來源入列，確認初始延遲前維持IDLE、第一畫格不提早；跨至少5個實際period轉換抽樣可見texture中心像素與PlayerView shutter，檢查黑畫格、重置遮罩及提早ENDED。同時驗證重複入列、檔案lease保護與裁剪釋放；另測真正佇列耗盡後新來源可恢復。這項預載斷言在舊逐段timer結構下無法成立；未另外對舊版執行CI，不宣稱已做實機A/B。
 
-既有720p編碼／解碼細節、橫直不中斷、錄影保存、回放刪除及背景生命週期持續回歸。CI與APK證據待完成後填入。模擬器通過只能驗證這些可觀察條件；Pixel硬體解碼、GPU時序、長時間負載與使用者黑閃是否解除，仍需安裝新版確認。
+既有720p編碼／解碼細節、橫直不中斷、錄影保存、回放刪除及背景生命週期持續回歸。[CI 38707980442](https://github.com/patty60723/delayCamForArchery/actions/runs/38707980442)，來源commit `cae20426d3d00e09e5c1753972fc457e6f8415ea`、tree `e86590f1b5a3acbda4152d24ede348364ebc09d9`：47 JVM＋45 Android API34原生測試，共92項，0失敗／錯誤／跳過。build及ui-tests均success；DESIGN lint、固定簽章、套件標籤與正式／測試版並存安裝檢查通過。新增連續播放測試確認至少5次跨段、至少15次可見畫格抽樣，黑色texture、可見shutter與提早ENDED均為0；缺段耗盡後恢復亦通過。這些是測試斷言所驗證的下限，不臆測實際抽樣次數。
+
+第一次[CI 38706616221](https://github.com/patty60723/delayCamForArchery/actions/runs/38706616221)的45原生測試中44通過，唯一失敗是新增缺段恢復測試在測試執行緒直接讀Media3狀態（IllegalStateException）。已將該兩個predicate改為在播放器application thread讀取；沒有刪除或放寬斷言。第二輪是相同App程式、修正測試讀取後完整重跑，非只重跑成功項目。
+
+[APK ZIP](https://github.com/patty60723/delayCamForArchery/actions/runs/38707980442/artifacts/11960175272)（解壓後安裝app-debug.apk） · [原生測試報告與截圖](https://github.com/patty60723/delayCamForArchery/actions/runs/38707980442/artifacts/11959354513)。下載artifact至2026-10-29有效。APK SHA-256：`bc7f95195772c29f0326c4e99325741faa5dde471b17980fcbbcb490c0db3c2d`；簽章憑證SHA-256：`a2e1d47174b2a24a99045fd4795ba37f97f115d3143733067a4859ce8555b042`。
+
+工作環境在核對期間離線，最終測試修正及文件透過GitHub connector完成；驗證依GitHub Actions的完整build／native job紀錄與可下載原生報告，不宣稱已在本地解壓本輪報告或檢視本輪截圖。
+
+模擬器通過只能驗證這些可觀察條件；Pixel硬體解碼、GPU時序、長時間負載與使用者黑閃是否解除，仍需安裝新版確認。
 
 測試包：測試15·箭影，com.archery.delaycam.fastresume，versionCode15，0.2.11-fast-return-test，沿用固定簽章，可覆蓋測試14，PR保持draft。

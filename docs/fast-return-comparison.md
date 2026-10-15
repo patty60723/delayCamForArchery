@@ -80,3 +80,8 @@
 ## 0.2.10 測試14：延遲畫質
 
 目前提供測試14·箭影，code14，沿用fastresume套件與固定簽章，可覆蓋測試13。720p目標來源、RGBA移除JPEG壓縮與轉向保留細節的修正、限制及90項通過證據見[delay-quality-720p.md](delay-quality-720p.md)。下載：[APK ZIP](https://github.com/patty60723/delayCamForArchery/actions/runs/38692371702/artifacts/11952383000)。來源dc7bc3fa396b0370038805d04e3c31449d7a3882；正式版與多裝置原型不合併到此包。
+
+
+## 0.2.11 測試15：延遲黑閃修正
+
+測試15·箭影保留720p，將逐段延後加入改為首次延遲開始＋完成片段預載，並撤回GPU提交後立即回收Bitmap。套件及簽章不變，可覆蓋測試14。[APK ZIP](https://github.com/patty60723/delayCamForArchery/actions/runs/38707980442/artifacts/11960175272)；來源cae20426d3d00e09e5c1753972fc457e6f8415ea，47 JVM＋45原生測試共92項通過。[技術細節與已知限制](delay-black-flash.md)。僅模擬器驗證，不宣稱已確認Pixel上所有黑閃原因，請保持手機不動觀察新版並文字回覆結果即可，不需要上傳影片。
