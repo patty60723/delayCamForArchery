@@ -118,8 +118,8 @@ class GalleryMultiSelectTest {
             assertEquals(1, opened)
             compose.onNodeWithText("選取", useUnmergedTree = true).performClick()
             compose.onNodeWithText("已選 0 段").assertExists()
-            compose.onNodeWithText("分享", useUnmergedTree = true).assertIsNotEnabled()
-            compose.onNodeWithText("刪除", useUnmergedTree = true).assertIsNotEnabled()
+            compose.onNode(hasText("分享") and hasClickAction()).assertIsNotEnabled()
+            compose.onNode(hasText("刪除") and hasClickAction()).assertIsNotEnabled()
             compose.onNodeWithText("取消", useUnmergedTree = true).performClick()
             compose.onNodeWithText("畫廊").assertExists()
         } finally {
