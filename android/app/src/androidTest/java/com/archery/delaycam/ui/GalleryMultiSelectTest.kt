@@ -88,6 +88,14 @@ class GalleryMultiSelectTest {
             compose.setContent { DelayCamTheme { GalleryScreen(vm, {}, { opened++ }) } }
             compose.waitUntil(15_000) { vm.galleryClips.value.any { it.uri == a } }
             assertFalse(vm.galleryClips.value.any { it.uri == outside })
+            @Suppress("UNCHECKED_CAST")
+            val message = DelayCamViewModel::class.java.getDeclaredField("_galleryMessage")
+                .apply { isAccessible = true }.get(vm) as kotlinx.coroutines.flow.MutableStateFlow<String?>
+            compose.runOnUiThread { message.value = "無法讀取畫廊，請重新整理。" }
+            compose.onNodeWithText("無法讀取畫廊，請重新整理。").assertExists()
+            compose.onNodeWithText("重新整理", useUnmergedTree = true).performClick()
+            compose.waitUntil(10_000) { !vm.galleryLoading.value && message.value == null }
+            assertTrue(vm.galleryClips.value.any { it.uri == a })
             compose.onNodeWithText("${prefix}_a.mp4").performScrollTo().performTouchInput { longClick() }
             compose.onNodeWithText("已選 1 段").assertExists()
             assertEquals(0, opened)

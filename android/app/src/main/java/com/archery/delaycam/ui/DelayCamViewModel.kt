@@ -908,6 +908,7 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
             val clips = galleryRepository.listClips()
             if (generation == galleryRefreshGeneration) {
                 _galleryClips.value = clips
+                if (_galleryMessage.value == "無法讀取畫廊，請重新整理。") _galleryMessage.value = null
                 _gallerySelection.value = _gallerySelection.value.reconcile(clips.map { it.uri.toString() })
             }
         } catch (e: CancellationException) { throw e
