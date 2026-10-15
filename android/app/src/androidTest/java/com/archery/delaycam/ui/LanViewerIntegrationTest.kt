@@ -38,6 +38,17 @@ class LanViewerIntegrationTest {
         bytes.copyOfRange(0, boundary).toString(Charsets.UTF_8) to bytes.copyOfRange(boundary+4, bytes.size)
     }
 
+    private fun screenshot(name: String) {
+        val resolver = instrumentation.targetContext.contentResolver
+        val image = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, ContentValues().apply {
+            put(MediaStore.Images.Media.DISPLAY_NAME, "$name.png")
+            put(MediaStore.Images.Media.MIME_TYPE, "image/png")
+            put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/ArcheryUiReview")
+        })!!
+        val bitmap = compose.onRoot().captureToImage().asAndroidBitmap()
+        resolver.openOutputStream(image)!!.use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+    }
+
     @Test(timeout = 150_000) fun cameraShareSurvivesRotationAndRevokesOnStopOrBackground() {
         assertTrue(BuildConfig.LAN_VIEWER_TRIAL)
         instrumentation.uiAutomation.grantRuntimePermission(instrumentation.targetContext.packageName, Manifest.permission.CAMERA)
@@ -51,17 +62,13 @@ class LanViewerIntegrationTest {
             val encoder = field(vm, "segmentEncoder")
             compose.onNodeWithContentDescription("顯示操作").performClick()
             compose.onNodeWithText("多裝置").performClick()
+            screenshot("lan-viewer-before-start")
             compose.onNodeWithText("開啟電腦觀看").performScrollTo().performClick()
             compose.waitUntil(15_000) { vm.viewerShare.value.running }
             compose.onNodeWithText("關閉觀看連線").performScrollTo().assertIsDisplayed()
             val resolver = activity.contentResolver
-            val image = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, ContentValues().apply {
-                put(MediaStore.Images.Media.DISPLAY_NAME, "lan-viewer-connection.png")
-                put(MediaStore.Images.Media.MIME_TYPE, "image/png")
-                put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/ArcheryUiReview")
-            })!!
-            val bitmap = compose.onRoot().captureToImage().asAndroidBitmap()
-            resolver.openOutputStream(image)!!.use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            compose.onNodeWithText("觀看連線已開啟").performScrollTo()
+            screenshot("lan-viewer-connection")
             val server = field(vm, "viewerServer") as LanViewerServer
             val token = server.token
             val path = "/v/$token/"
@@ -82,14 +89,18 @@ class LanViewerIntegrationTest {
             assertTrue(request(server.port, "/join/$joinId", "POST").first.startsWith("HTTP/1.1 200"))
             assertFalse(request(server.port, "/join/$joinId").second.toString(Charsets.UTF_8).contains(token))
             compose.waitUntil(10_000) { vm.viewerShare.value.requests.any { it.id == joinId } }
-            compose.onNodeWithContentDescription("多裝置，1 個觀看要求待確認").assertIsDisplayed().performClick()
+            compose.onNodeWithContentDescription("多裝置，1 個觀看要求待確認").assertIsDisplayed()
+            screenshot("lan-viewer-pending-landscape")
+            compose.onNodeWithContentDescription("多裝置，1 個觀看要求待確認").performClick()
             compose.onNodeWithText("核對碼 AAAAAA").performScrollTo().assertIsDisplayed()
+            screenshot("lan-viewer-approval")
             compose.onNodeWithText("允許觀看").performScrollTo().assertIsDisplayed().performClick()
             compose.waitUntil(5_000) { vm.viewerShare.value.requests.isEmpty() }
             compose.onNodeWithText("返回練習").performClick()
             compose.onNodeWithContentDescription("多裝置 · 已開啟").assertIsDisplayed()
             compose.onNodeWithContentDescription("顯示操作").performClick()
             compose.onNodeWithText("設定").performClick()
+            screenshot("lan-viewer-settings-entry")
             compose.onNodeWithText("開啟電腦觀看").assertDoesNotExist()
             compose.onNodeWithText("關閉觀看連線").assertDoesNotExist()
             compose.onNodeWithText("多裝置觀看").performScrollTo().performClick()
@@ -133,6 +144,7 @@ class LanViewerIntegrationTest {
             }
             scenario.onActivity { it.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT }
             compose.waitUntil(15_000) { activity.resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT }
+            screenshot("lan-viewer-portrait")
             assertTrue(vm.viewerShare.value.running)
             assertSame(server, field(vm, "viewerServer"))
             assertSame(encoder, field(vm, "segmentEncoder"))
