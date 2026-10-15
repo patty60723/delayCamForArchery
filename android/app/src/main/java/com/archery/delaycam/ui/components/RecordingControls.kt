@@ -24,7 +24,18 @@ fun RecordingControls(
     onOpenSaved: (Uri, String) -> Unit,
     compact: Boolean = false,
     modifier: Modifier = Modifier,
+    allowStart: Boolean = true,
 ) {
+    // Browsing/review pages expose ongoing work, never a new recording command.
+    if (!allowStart && phase == RecordingPhase.IDLE) {
+        if (save.phase != SavePhase.IDLE) {
+            Surface(modifier = modifier, color = MaterialTheme.colorScheme.surface,
+                contentColor = MaterialTheme.colorScheme.onSurface) {
+                SaveStatusNotice(save, onRetry, onOpenSaved)
+            }
+        }
+        return
+    }
     val busy = phase == RecordingPhase.STARTING || phase == RecordingPhase.STOPPING ||
         save.phase == SavePhase.SAVING
     Surface(modifier = modifier,

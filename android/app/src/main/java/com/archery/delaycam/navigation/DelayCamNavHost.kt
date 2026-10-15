@@ -113,7 +113,7 @@ fun DelayCamNavHost(viewModel: DelayCamViewModel) {
             recording = { compact, modifier ->
                 RecordingControls(recordingPhase, recordingElapsed, recordingSave,
                     viewModel::toggleContinuousRecording, viewModel::retryRecordingSave, openSaved,
-                    compact = compact, modifier = modifier)
+                    compact = compact, modifier = modifier, allowStart = route == Routes.LIVE)
             },
             content = { modifier -> AppNavHost(navController, viewModel, modifier, openSaved, previewBounds) },
         )

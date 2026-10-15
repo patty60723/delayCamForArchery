@@ -20,7 +20,7 @@
 
 IDLE → STARTING → RECORDING → STOPPING → IDLE。開始／停止由同一個入口處理，忙碌時禁用重複切換；手勢一次保持只觸發一次，放下後重新啟用。手勢只在練習和即時回放頁作用。
 
-錄影控制置於導航之外，因此跨 LIVE、Replay、相簿、播放器與設定維持一致。橫向 LIVE 使用 compact 浮動控制，不占導航高度；其他頁與直向保持頂部列。RecordingScreenLayout 讓導航內容保持單一 composition 位置，切換控制樣式不建立第二個導航或播放器。計時使用單調時鐘，請求停止時凍結，不把桌面時間計入。
+錄影控制置於導航之外，跨 LIVE、Replay、相簿、播放器與設定共用狀態。0.2.14 起只有 LIVE 提供開始／繼續錄影；非 LIVE 且 IDLE 時，沒有保存狀態就不顯示錄影列，有保存狀態則共用 SaveStatusNotice 提供進度／查看／重試。STARTING／RECORDING／STOPPING 保留處理狀態或停止操作，不因瀏覽畫廊而停止錄影。橫向 LIVE 使用 compact 浮動控制，不占導航高度；其他頁與直向保持頂部列。RecordingScreenLayout 讓導航內容保持單一 composition 位置，切換控制樣式不建立第二個導航或播放器。計時使用單調時鐘，請求停止時凍結，不把桌面時間計入。
 
 停止先等待含尾段的片段或編碼器完成事件，再保存。若 5 秒內沒有完成事件，保存已取得的內容並顯示末段未確認，不宣稱完整。保存要求在 Activity 結束時仍盡力完成；程序被系統終止後的復原屬後續範圍。
 
@@ -114,3 +114,8 @@ Canonical owners: GalleryScreen owns presentation and confirmation; GallerySelec
 長按選取第一段，之後點擊切換；全選僅選目前成功載入的畫廊影片，不會自動選入新保存影片。零選取時停留選取模式但禁用分享／刪除。返回或取消退出，忙碌時返回離頁但任務繼續。刪除前確認精確數量；成功清除保存結果引用及畫面比例 metadata，失敗保留選取。Android 11+ 將需要權限的 URI 分組交給系統刪除確認並逐一驗證結果；Android 10 授權後重試該項。取消系統確認不回復已完成刪除，也不繼續彈出後續授權。
 
 分享使用 ACTION_SEND 或 ACTION_SEND_MULTIPLE、video/mp4、每個 URI 的 ClipData 和暫時 READ 授權。預檢失敗保留選取且顯示錯誤；不自動傳送或指定收件人。重新整理失敗不清空畫廊；成功更新只移除已不存在的選取。驗證：GallerySelectionTest、GalleryMultiSelectTest，以及既有單箭刪除、播放與旋轉測試；其他 App 所有權與 Android 10 系統授權需實機驗收。
+
+
+## Recording entry scope (0.2.14)
+
+DelayCamNavHost 依目前路由傳遞 RecordingControls.allowStart，僅 Routes.LIVE 為 true。RecordingControls 擁有同一錄影狀態與非練習頁變體；不在 GalleryScreen 額外隱藏或重做錄影列。沒有錄影／保存內容時不佔頂部高度，RecordingScreenLayout 的唯一導航 composition 位置不變。GalleryRecordingEntryTest 驗證真實導航練習→畫廊→返回→設定，並以共用元件驗證錄影停止、忙碌禁用與保存進度／成功／重試，確保沒有開始／繼續入口。
