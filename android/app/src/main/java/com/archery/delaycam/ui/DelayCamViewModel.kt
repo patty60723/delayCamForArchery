@@ -81,6 +81,7 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
     private val _settings = MutableStateFlow(AppSettings())
     val settings: StateFlow<AppSettings> = _settings.asStateFlow()
     private var pendingSettings: AppSettings? = null
+    @Volatile private var hasCameraFrame = false
 
     private val _appState = MutableStateFlow(AppState.LIVE)
     val appState: StateFlow<AppState> = _appState.asStateFlow()
@@ -145,7 +146,7 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
     private var practiceVisible = false
 
     private sealed interface RecordingCommand {
-        data class Start(val aspect: Float) : RecordingCommand
+        data class Start(val aspect: Float?) : RecordingCommand
         data class Append(val segment: SegmentInfo, val lease: ImmutableSegmentStore.Lease?) : RecordingCommand
         data object Stop : RecordingCommand
         data class Cleanup(val prefix: String, val shotJob: Job?) : RecordingCommand
@@ -284,6 +285,7 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
     /** Called on the main thread from Activity.onStart(), including first launch. */
     fun onAppForegrounded() {
         val sessionId = captureSession.beginForeground() ?: return
+        hasCameraFrame = false
         resetDelayedPlayback()
         syncGestureScene()
         _warmupRemainingSec.value = settings.value.delaySec
@@ -362,6 +364,7 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
         if (!captureSession.isCurrent(sessionId)) return
         val aspect = settings.value.captureAspect.ratioFor(bitmap.width, bitmap.height)
         _cameraAspectRatio.value = aspect
+        hasCameraFrame = true
         segmentEncoder?.onFrame(bitmap, aspect)
         if (captureSession.isCurrent(sessionId)) {
             gestureEngine.analyzeBitmap(bitmap, timestampMs)
@@ -560,7 +563,7 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
                 publishRecordingPhase()
                 val wide = _cameraAspectRatio.value > 1f
                 val recordAspect = settings.value.captureAspect.ratioFor(if (wide) 4 else 3, if (wide) 3 else 4)
-                recordingCommands.trySend(RecordingCommand.Start(recordAspect))
+                recordingCommands.trySend(RecordingCommand.Start(recordAspect.takeIf { hasCameraFrame }))
             }
             RecordingPhase.RECORDING -> requestRecordingStop()
             RecordingPhase.STARTING, RecordingPhase.STOPPING -> Unit

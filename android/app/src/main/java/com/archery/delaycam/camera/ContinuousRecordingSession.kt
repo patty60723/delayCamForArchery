@@ -81,6 +81,12 @@ class ContinuousRecordingSession(private val context: Context) {
                 val trackIndex = MediaStoreExport.selectVideoTrack(extractor)
                     ?: throw IOException("錄影片段沒有可讀取的影像")
                 extractor.selectTrack(trackIndex)
+                if (outputAspect == null) {
+                    val format = extractor.getTrackFormat(trackIndex)
+                    outputAspect = segment.contentAspectRatio ?: (
+                        format.getInteger(android.media.MediaFormat.KEY_WIDTH).toFloat() /
+                            format.getInteger(android.media.MediaFormat.KEY_HEIGHT))
+                }
 
                 if (!muxerStarted) {
                     videoTrackIndex = activeMuxer.addTrack(extractor.getTrackFormat(trackIndex))

@@ -9,6 +9,24 @@ import org.junit.Test
 import java.io.File
 
 class VideoAspectExportTest {
+    @Test(timeout = 30_000) fun recordingStartedBeforeFramesUsesFirstActualCaptureOrientation() = runBlocking {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val source = File.createTempFile("first_capture", ".mp4", context.cacheDir)
+        instrumentation.context.assets.open("clip-fixture.mp4").use { input -> source.outputStream().use { input.copyTo(it) } }
+        val recording = ContinuousRecordingSession(context)
+        var completed: File? = null
+        try {
+            recording.start() // No camera frame yet: portrait/landscape is not known.
+            assertNull(recording.outputAspect)
+            recording.appendSegment(SegmentInfo(source, 0, 1000, 1000, 16f / 9f))
+            assertEquals(16f / 9f, recording.outputAspect!!, .001f)
+            recording.appendSegment(SegmentInfo(source, 1000, 2000, 1000, 9f / 16f))
+            assertEquals("Later rotation must keep the starting format", 16f / 9f, recording.outputAspect!!, .001f)
+            completed = recording.stopToFile()
+        } finally { completed?.delete(); recording.releaseResources(); source.delete() }
+    }
+
     @Test(timeout = 30_000) fun matchingFormatKeepsOriginalFileBytesAndMixedPresentationTimeline() = runBlocking {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
