@@ -7,7 +7,9 @@
 | Capability | Canonical owner | Source of truth | Allowed variants | Verification |
 | --- | --- | --- | --- | --- |
 | Toast | DelayCamNavHost / RecordingControls / SaveStatusNotice | 本文件 Feedback | 一般短提示；保存狀態持續顯示 | RecordingPlaybackUiTest |
-| CRUD | DelayCamViewModel / DeleteClipAction | 本文件 Playback | 手動開啟保存結果；回放／已存影片共用刪除確認 | ReplayReviewDeleteTest / RecordingPlaybackUiTest / 裝置驗收 |
+| CRUD | DelayCamViewModel / GalleryRepository / GalleryScreen / DeleteClipAction | 本文件 Playback、Gallery bulk actions | 單段確認；畫廊多選確認與部分失敗保留 | GalleryMultiSelectTest / ReplayReviewDeleteTest |
+| Selection | GallerySelection / GalleryScreen | 本文件 Gallery bulk actions | 長按或選取；全選／取消；URI 識別 | GallerySelectionTest / GalleryMultiSelectTest |
+| Sharing | ClipSharing | 本文件 Gallery bulk actions | 單段／多段共用預檢、ClipData 與暫時讀取授權 | GalleryMultiSelectTest |
 | Recording | RecordingScreenLayout / RecordingControls | 本文件 Recording | 一般頂部列；橫向練習浮動 compact 版本，共用狀態與按鈕規則 | RecordingPlaybackUiTest / LivePracticeUiTest |
 | Capture format | AppSettings / SettingsRepository / CaptureAspectControl / FrameCanvas / VideoAspectNormalizer | 本文件 Capture format | 4:3／16:9；完整／滿版獨立 | CaptureSizeTest / VideoAspectExportTest / RotationContinuityTest |
 | Practice controls | LivePracticeLayout / LiveSaveActions | 本文件 Practice Layout and Warmup | 直向下方；橫向非模態可收起面板 | LivePracticeUiTest |
@@ -104,3 +106,11 @@ ViewModel的previewSource及cameraSourceStatus是預覽use case與實際來源�
 
 
 設定持久化（0.2.12）：ViewModel仍立即更新畫面與pendingSettings，寫入依Main呼叫順序取得Mutex，於IO執行DataStore transaction，避免較舊的快速切換請求落在最後。來源切換仍跟隨即時設定，DataStore舊回覆不蓋過尚未確認的最新值。SettingsPersistenceTest以唯一的最後偏好驗證完成寫入及新ViewModel還原，回放FIT／FILL像素與持久化原有斷言維持。
+
+## Gallery bulk actions (0.2.13)
+
+Canonical owners: GalleryScreen owns presentation and confirmation; GallerySelection owns URI selection transitions; DelayCamViewModel owns gallery refresh, progress, batch deletion and authorization; GalleryRepository owns Movies/Archery/ media access; ClipSharing owns both gallery and saved-player sharing intents. No alternate batch deletion path is introduced in PlayerScreen.
+
+長按選取第一段，之後點擊切換；全選僅選目前成功載入的畫廊影片，不會自動選入新保存影片。零選取時停留選取模式但禁用分享／刪除。返回或取消退出，忙碌時返回離頁但任務繼續。刪除前確認精確數量；成功清除保存結果引用及畫面比例 metadata，失敗保留選取。Android 11+ 將需要權限的 URI 分組交給系統刪除確認並逐一驗證結果；Android 10 授權後重試該項。取消系統確認不回復已完成刪除，也不繼續彈出後續授權。
+
+分享使用 ACTION_SEND 或 ACTION_SEND_MULTIPLE、video/mp4、每個 URI 的 ClipData 和暫時 READ 授權。預檢失敗保留選取且顯示錯誤；不自動傳送或指定收件人。重新整理失敗不清空畫廊；成功更新只移除已不存在的選取。驗證：GallerySelectionTest、GalleryMultiSelectTest，以及既有單箭刪除、播放與旋轉測試；其他 App 所有權與 Android 10 系統授權需實機驗收。

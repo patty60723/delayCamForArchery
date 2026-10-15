@@ -22,6 +22,7 @@ import com.archery.delaycam.ui.playback.*
 
 @Composable
 fun PlayerScreen(viewModel: DelayCamViewModel, clipUri: String, clipName: String, onBack: () -> Unit) {
+    val sharing = rememberClipSharing()
     val context = LocalContext.current
     val settings by viewModel.settings.collectAsState()
     val mirrored by viewModel.mirrorVideo.collectAsState()
@@ -49,13 +50,9 @@ fun PlayerScreen(viewModel: DelayCamViewModel, clipUri: String, clipName: String
         controls = {
             PlaybackControls(player, mirrored, viewModel::setMirrorVideo,
                 onSpeedChange = { rate -> viewModel.updateSettings { it.copy(slowMoRate = rate) } })
-            OutlinedButton(onClick = {
-                val intent = Intent(Intent.ACTION_SEND).apply {
-                    type = "video/mp4"; putExtra(Intent.EXTRA_STREAM, clipUri.toUri())
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                }
-                context.startActivity(Intent.createChooser(intent, "分享影片"))
-            }, modifier = Modifier.fillMaxWidth()) { Text("分享影片") }
+            OutlinedButton(onClick = { sharing.share(listOf(clipUri.toUri())) }, enabled = !sharing.busy,
+                modifier = Modifier.fillMaxWidth()) { Text(if (sharing.busy) "正在準備分享…" else "分享影片") }
+            sharing.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             DeleteClipAction(viewModel, clipUri.toUri(), clipName, onDeleted = onBack,
                 modifier = Modifier.fillMaxWidth())
         },

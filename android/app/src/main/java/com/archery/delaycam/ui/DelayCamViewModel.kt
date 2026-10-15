@@ -42,6 +42,8 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import com.archery.delaycam.gallery.GallerySelection
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -107,6 +109,30 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
 
     private val _toast = MutableStateFlow<String?>(null)
     val toast: StateFlow<String?> = _toast.asStateFlow()
+
+    private val _gallerySelection = MutableStateFlow(GallerySelection())
+    val gallerySelection = _gallerySelection.asStateFlow()
+    private val _galleryMessage = MutableStateFlow<String?>(null)
+    val galleryMessage = _galleryMessage.asStateFlow()
+    private val _galleryLoading = MutableStateFlow(false)
+    val galleryLoading = _galleryLoading.asStateFlow()
+    private val _batchDeleting = MutableStateFlow(false)
+    val batchDeleting = _batchDeleting.asStateFlow()
+    private var batchApproval: CompletableDeferred<Boolean>? = null
+    private var galleryRefreshGeneration = 0L
+
+    fun selectGalleryClip(id: String) {
+        if (!_batchDeleting.value && !_clipDeletion.value.busy)
+            _gallerySelection.value = _gallerySelection.value.toggle(id)
+    }
+    fun enterGallerySelection() { _gallerySelection.value = GallerySelection(active = true) }
+    fun cancelGallerySelection() {
+        if (!_batchDeleting.value) _gallerySelection.value = GallerySelection()
+    }
+    fun selectAllGalleryClips() {
+        if (!_batchDeleting.value && !_clipDeletion.value.busy)
+            _gallerySelection.value = _gallerySelection.value.toggleAll(_galleryClips.value.map { it.uri.toString() })
+    }
 
     private val _galleryClips = MutableStateFlow<List<ClipEntry>>(emptyList())
     val galleryClips: StateFlow<List<ClipEntry>> = _galleryClips.asStateFlow()
@@ -876,19 +902,101 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
     }
 
     suspend fun refreshGallery() {
-        _galleryClips.value = try {
-            galleryRepository.listClips()
+        val generation = ++galleryRefreshGeneration
+        _galleryLoading.value = true
+        try {
+            val clips = galleryRepository.listClips()
+            if (generation == galleryRefreshGeneration) {
+                _galleryClips.value = clips
+                _gallerySelection.value = _gallerySelection.value.reconcile(clips.map { it.uri.toString() })
+            }
+        } catch (e: CancellationException) { throw e
         } catch (e: Exception) {
-            // MediaStore query failing (e.g. a transient content-provider
-            // hiccup) used to propagate straight out of GalleryScreen's
-            // LaunchedEffect and crash the whole app on opening Gallery.
             Log.e(TAG, "refreshGallery failed", e)
-            emptyList()
+            _galleryMessage.value = "無法讀取畫廊，請重新整理。"
+        } finally {
+            if (generation == galleryRefreshGeneration) _galleryLoading.value = false
         }
     }
 
+    /** Snapshot selection; failures stay selected. Permission prompts never expand this scope. */
+    fun deleteSelectedGalleryClips() {
+        if (_batchDeleting.value || _clipDeletion.value.busy) return
+        val targets = _galleryClips.value.filter { it.uri.toString() in _gallerySelection.value.ids }
+        if (targets.isEmpty()) return
+        _batchDeleting.value = true
+        viewModelScope.launch {
+            val deleted = mutableSetOf<String>()
+            val approvalNeeded = mutableListOf<android.net.Uri>()
+            var cancelled = false
+            suspend fun rememberDeleted(uri: android.net.Uri) {
+                forgetDeletedClip(uri)
+                deleted += uri.toString()
+                _galleryClips.value = _galleryClips.value.filterNot { it.uri == uri }
+            }
+            suspend fun requestApproval(sender: android.content.IntentSender): Boolean {
+                val result = CompletableDeferred<Boolean>()
+                batchApproval = result
+                _deleteApproval.value = sender
+                return try { result.await() } finally {
+                    batchApproval = null
+                    _deleteApproval.value = null
+                }
+            }
+            try {
+                for ((index, clip) in targets.withIndex()) {
+                    _galleryMessage.value = "正在刪除 ${index + 1} / ${targets.size} 段…"
+                    try {
+                        galleryRepository.deleteClip(clip.uri)
+                        rememberDeleted(clip.uri)
+                    } catch (e: CancellationException) { throw e
+                    } catch (e: Exception) {
+                        if (e is SecurityException && android.os.Build.VERSION.SDK_INT >= 30) {
+                            approvalNeeded += clip.uri
+                        } else if (!cancelled && android.os.Build.VERSION.SDK_INT == 29 && e is android.app.RecoverableSecurityException) {
+                            if (requestApproval(e.userAction.actionIntent.intentSender)) {
+                                try {
+                                    galleryRepository.deleteClip(clip.uri)
+                                    rememberDeleted(clip.uri)
+                                } catch (e: CancellationException) { throw e
+                                } catch (_: Exception) { /* retain for retry */ }
+                            } else cancelled = true
+                        }
+                    }
+                }
+                for (chunk in approvalNeeded.chunked(1000)) {
+                    if (cancelled) break
+                    try {
+                        _galleryMessage.value = "等待系統確認刪除 ${chunk.size} 段影片…"
+                        val sender = android.provider.MediaStore.createDeleteRequest(
+                            getApplication<Application>().contentResolver, chunk).intentSender
+                        if (requestApproval(sender)) {
+                            for (uri in chunk) {
+                                try { if (!galleryRepository.clipExists(uri)) rememberDeleted(uri) }
+                                catch (e: CancellationException) { throw e }
+                                catch (_: Exception) { /* retain for retry */ }
+                            }
+                        } else cancelled = true
+                    } catch (e: CancellationException) { throw e
+                    } catch (_: Exception) { /* retain for retry */ }
+                }
+                val remaining = targets.map { it.uri.toString() }.toSet() - deleted
+                _gallerySelection.value = GallerySelection(active = remaining.isNotEmpty(), ids = remaining)
+                refreshGallery()
+                _galleryMessage.value = if (remaining.isEmpty()) "已刪除 ${deleted.size} 段影片"
+                    else "已刪除 ${deleted.size} 段，${remaining.size} 段未刪除" + if (cancelled) "（已取消系統授權）" else "，可重新選取刪除重試。"
+            } finally {
+                _batchDeleting.value = false
+                batchApproval = null
+                _deleteApproval.value = null
+            }
+        }
+    }
+
+    fun onDeleteApprovalLaunched() { _deleteApproval.value = null }
+
     fun deleteClip(uri: android.net.Uri, onDeleted: () -> Unit = {}) {
-        if (_clipDeletion.value.busy) return
+        if (_clipDeletion.value.busy || _batchDeleting.value) return
         _clipDeletion.value = ClipDeletionState(uri, busy = true)
         viewModelScope.launch {
             try {
@@ -910,10 +1018,14 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    private suspend fun completeClipDeletion(uri: android.net.Uri, onDeleted: () -> Unit) {
+    private fun forgetDeletedClip(uri: android.net.Uri) {
         if (_clipSave.value.uri == uri) _clipSave.value = SaveStatus()
         if (_recordingSave.value.uri == uri) _recordingSave.value = SaveStatus()
         com.archery.delaycam.gallery.ClipPresentationStore(getApplication()).remove(uri)
+    }
+
+    private suspend fun completeClipDeletion(uri: android.net.Uri, onDeleted: () -> Unit) {
+        forgetDeletedClip(uri)
         _clipDeletion.value = ClipDeletionState()
         refreshGallery()
         _toast.value = "影片已刪除"
@@ -921,6 +1033,7 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun onDeleteApprovalResult(granted: Boolean) {
+        batchApproval?.let { it.complete(granted); return }
         val pending = pendingDeletion ?: return
         pendingDeletion = null
         _deleteApproval.value = null

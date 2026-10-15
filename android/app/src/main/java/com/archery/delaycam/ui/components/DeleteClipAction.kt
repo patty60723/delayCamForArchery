@@ -12,11 +12,12 @@ import com.archery.delaycam.ui.DelayCamViewModel
 @Composable
 fun DeleteClipAction(viewModel: DelayCamViewModel, uri: Uri?, name: String,
     label: String = "刪除影片", onDeleted: () -> Unit, onInteraction: () -> Unit = {}, modifier: Modifier = Modifier) {
+    val batchDeleting by viewModel.batchDeleting.collectAsState()
     val deletion by viewModel.clipDeletion.collectAsState()
     var confirm by remember(uri) { mutableStateOf(false) }
     val isThisClip = deletion.uri == uri
     Column(modifier) {
-        TextButton(onClick = { onInteraction(); confirm = true }, enabled = uri != null && !deletion.busy,
+        TextButton(onClick = { onInteraction(); confirm = true }, enabled = uri != null && !deletion.busy && !batchDeleting,
             modifier = Modifier.fillMaxWidth()) { Text(if (isThisClip && deletion.busy) "刪除中…" else label,
                 color = MaterialTheme.colorScheme.error) }
         if (isThisClip && deletion.error != null) Text(deletion.error!!, color = MaterialTheme.colorScheme.error,

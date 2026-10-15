@@ -56,7 +56,7 @@ fun DelayCamNavHost(viewModel: DelayCamViewModel) {
     }
     LaunchedEffect(approval) {
         approval?.let { sender ->
-            try { deleteLauncher.launch(IntentSenderRequest.Builder(sender).build()) }
+            try { deleteLauncher.launch(IntentSenderRequest.Builder(sender).build()); viewModel.onDeleteApprovalLaunched() }
             catch (_: Exception) { viewModel.onDeleteApprovalResult(false) }
         }
     }

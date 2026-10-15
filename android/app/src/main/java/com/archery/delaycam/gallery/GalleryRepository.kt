@@ -20,7 +20,7 @@ class GalleryRepository(private val context: Context) {
             MediaStore.Video.Media.RELATIVE_PATH,
         )
         val selection = "${MediaStore.Video.Media.RELATIVE_PATH} LIKE ?"
-        val selectionArgs = arrayOf("Movies/Archery%")
+        val selectionArgs = arrayOf("Movies/Archery/%")
         val sortOrder = "${MediaStore.Video.Media.DATE_ADDED} DESC"
 
         context.contentResolver.query(
@@ -46,7 +46,7 @@ class GalleryRepository(private val context: Context) {
                     )
                 )
             }
-        }
+        } ?: throw java.io.IOException("Cannot read gallery")
         entries
     }
 
