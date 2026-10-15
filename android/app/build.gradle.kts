@@ -20,8 +20,8 @@ android {
         minSdk = 29
         targetSdk = 34
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        versionCode = 19
-        versionName = "0.3.0"
+        versionCode = 20
+        versionName = "0.3.1"
         buildConfigField("boolean", "FAST_RESUME_TRIAL", fastResumeTrial.toString())
         buildConfigField("boolean", "LAN_VIEWER_TRIAL", lanViewerTrial.toString())
         manifestPlaceholders["appIcon"] = if (fastResumeTrial) "@mipmap/ic_launcher_test" else "@mipmap/ic_launcher"

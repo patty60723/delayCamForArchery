@@ -29,7 +29,7 @@ import com.archery.delaycam.ui.DelayCamViewModel
 
 /** Settings screen (spec 3.3 / 4). */
 @Composable
-fun SettingsScreen(viewModel: DelayCamViewModel, onBack: () -> Unit) {
+fun SettingsScreen(viewModel: DelayCamViewModel, onBack: () -> Unit, onOpenViewer: () -> Unit = {}) {
     val settings by viewModel.settings.collectAsState()
     val recordingPhase by viewModel.recordingPhase.collectAsState()
     val sourceStatus by viewModel.cameraSourceStatus.collectAsState()
@@ -44,6 +44,13 @@ fun SettingsScreen(viewModel: DelayCamViewModel, onBack: () -> Unit) {
         Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Text("‹", color = Color.White) }
             Text("設定", color = Color.White)
+        }
+
+        if (BuildConfig.LAN_VIEWER_TRIAL) {
+            androidx.compose.material3.OutlinedButton(onClick = onOpenViewer,
+                modifier = Modifier.fillMaxWidth()) { Text("多裝置觀看") }
+            Text("電腦觀看、連線要求與本次觀看連結",
+                color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant)
         }
 
         SliderField(
@@ -124,7 +131,7 @@ fun SettingsScreen(viewModel: DelayCamViewModel, onBack: () -> Unit) {
                 ) { Text(label) }
             }
         }
-        if (BuildConfig.LAN_VIEWER_TRIAL) com.archery.delaycam.ui.components.ViewerShareControls(viewModel)
+
         Text("箭影 · " + (if (BuildConfig.FAST_RESUME_TRIAL) "測試版 " else "一般版 ") +
             BuildConfig.VERSION_NAME + " (" + BuildConfig.VERSION_CODE + ")",
             color = Color(0xFF9AA1AB), modifier = Modifier.padding(top = 24.dp))

@@ -9,6 +9,7 @@
 | Toast | DelayCamNavHost / RecordingControls / SaveStatusNotice | 本文件 Feedback | 一般短提示；保存狀態持續顯示 | RecordingPlaybackUiTest |
 | CRUD | DelayCamViewModel / GalleryRepository / GalleryScreen / DeleteClipAction | 本文件 Playback、Gallery bulk actions | 單段確認；畫廊多選確認與部分失敗保留 | GalleryMultiSelectTest / ReplayReviewDeleteTest |
 | Selection | GallerySelection / GalleryScreen | 本文件 Gallery bulk actions | 長按或選取；全選／取消；URI 識別 | GallerySelectionTest / GalleryMultiSelectTest |
+| Viewer connection | ViewerScreen / ViewerShareControls / ViewerShareStatus / DelayCamViewModel | 本文件 Multi-device navigation | 獨立頁、練習浮動狀態及設定入口，共用同一 session | LanViewerIntegrationTest / ViewerNavigationUiTest |
 | Sharing | ClipSharing | 本文件 Gallery bulk actions | 單段／多段共用預檢、ClipData 與暫時讀取授權 | GalleryMultiSelectTest |
 | Recording | RecordingScreenLayout / RecordingControls | 本文件 Recording | 一般頂部列；橫向練習浮動 compact 版本，共用狀態與按鈕規則 | RecordingPlaybackUiTest / LivePracticeUiTest |
 | Capture format | AppSettings / SettingsRepository / CaptureAspectControl / FrameCanvas / VideoAspectNormalizer | 本文件 Capture format | 4:3／16:9；完整／滿版獨立 | CaptureSizeTest / VideoAspectExportTest / RotationContinuityTest |
@@ -138,3 +139,12 @@ DelayCamNavHost 依目前路由傳遞 RecordingControls.allowStart，僅 Routes.
 本輪驗收以電腦 Chrome／Edge 為目標，Chromium 自動測試；真實 Pixel→電腦 Wi-Fi／熱點由使用者試裝驗收。不能以 localhost 或模擬器測試宣稱已完成實際無線連線、Safari 相容性、永久配對或遠端控制。
 
 電腦首次授權由 LanViewerServer 的 JoinRequest 與 ViewerShareControls 擁有：電腦輸入短位址，POST 隨機192-bit要求ID、顯示六位核對代碼；手機只在本機允許／拒絕。未批准前輪詢不回傳觀看 token，允許後才導向本次觀看頁。要求重送按同ID冪等，最多四個待確認／24個短期項目，新要求清除三分鐘前項目；停止連線使全部失效。不存在遠端授權／相機控制路由。LanViewerServerTest、LanViewerIntegrationTest 與瀏覽器測試涵蓋拒絕、重試、核對、允許前無媒體與允許後觀看。
+
+
+## Multi-device navigation (0.3.1)
+
+依使用者確認的本次 IA review：Routes.VIEWER 僅出現在 LAN_VIEWER_TRIAL；練習及設定入口都導航到同一 ViewerScreen。一般返回回到來源頁，「返回練習」清除練習上方路由。切入此頁暫停練習手勢，但不停止相機、重建編碼器、重暖機或重啟 LAN server；離頁不撤銷連結。明確關閉或 App 背景仍依既有政策撤銷。
+
+連線開啟與待確認由同一 viewerShare StateFlow 擁有。練習頁以 ViewerShareStatus 浮動顯示可點選狀態；待確認顯示數量，點入同一頁核對，允許／拒絕後數量同步。操作面板展開時由入口提供相同數量；不自動跳走、彈出模態或播放提示音。狀態只代表 server 可供觀看，不等同有裝置在線；不顯示無法量測的已連線台數。
+
+待確認先於網址與次要內容；短位址是主要連線方式，QR／完整連結／其他網路位址預設收合，沒有位址時仍提供重新取得連結。權限模型不變，QR 與完整連結包含本次觀看權限，必須明示；沒有永久記住裝置。啟動中禁用重送，錯誤持續顯示可重試。此頁不提供開始／繼續錄影；既有全域停止與保存回復仍可使用。

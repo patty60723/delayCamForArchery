@@ -17,6 +17,8 @@ import com.archery.delaycam.state.AppState
 import com.archery.delaycam.state.SavePhase
 import com.archery.delaycam.ui.DelayCamViewModel
 import com.archery.delaycam.ui.components.SaveStatusNotice
+import com.archery.delaycam.ui.components.ViewerShareStatus
+import com.archery.delaycam.BuildConfig
 import com.archery.delaycam.ui.playback.VideoPlayer
 
 @Composable
@@ -26,7 +28,9 @@ fun LiveScreen(
     onOpenGallery: () -> Unit,
     onOpenSavedClip: (Uri, String) -> Unit,
     onPreviewBounds: (Rect?) -> Unit,
+    onOpenViewer: () -> Unit = {},
 ) {
+    val viewer by viewModel.viewerShare.collectAsState()
     val cameraAspect by viewModel.cameraAspectRatio.collectAsState()
     val settings by viewModel.settings.collectAsState()
     val warmup by viewModel.warmupRemainingSec.collectAsState()
@@ -54,9 +58,14 @@ fun LiveScreen(
                 Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp),
                     verticalAlignment = Alignment.CenterVertically) {
                     Text(status, Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
+                    if (BuildConfig.LAN_VIEWER_TRIAL) TextButton(onClick = onOpenViewer) { Text("多裝置") }
                     TextButton(onClick = onOpenGallery) { Text("影片") }
                     TextButton(onClick = onOpenSettings) { Text("設定") }
                 }
+            }
+            if (BuildConfig.LAN_VIEWER_TRIAL && sidePanel) TextButton(onClick = onOpenViewer,
+                modifier = Modifier.fillMaxWidth()) {
+                Text(if (viewer.requests.isNotEmpty()) "多裝置 · 待確認 ${viewer.requests.size}" else "多裝置")
             }
             if (!sidePanel) SaveStatusNotice(save, viewModel::retryClipSave, onOpenSavedClip)
         },
@@ -96,6 +105,9 @@ fun LiveScreen(
                 }
                 TextButton(onClick = { showHelp = true }) { Text("操作說明") }
             }
+        },
+        connectionStatus = { modifier ->
+            if (BuildConfig.LAN_VIEWER_TRIAL) ViewerShareStatus(viewer, onOpenViewer, modifier)
         },
         feedbackOnRight = showPreview && settings.previewCorner == PreviewCorner.BOTTOM_LEFT,
         landscapeFeedback = { modifier ->

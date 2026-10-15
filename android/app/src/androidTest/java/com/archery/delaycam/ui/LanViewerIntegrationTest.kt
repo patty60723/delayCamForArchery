@@ -50,13 +50,13 @@ class LanViewerIntegrationTest {
             val cameraSession = vm.cameraSessionForFrame()
             val encoder = field(vm, "segmentEncoder")
             compose.onNodeWithContentDescription("顯示操作").performClick()
-            compose.onNodeWithText("設定").performClick()
+            compose.onNodeWithText("多裝置").performClick()
             compose.onNodeWithText("開啟電腦觀看").performScrollTo().performClick()
             compose.waitUntil(15_000) { vm.viewerShare.value.running }
             compose.onNodeWithText("關閉觀看連線").performScrollTo().assertIsDisplayed()
             val resolver = activity.contentResolver
             val image = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, ContentValues().apply {
-                put(MediaStore.Images.Media.DISPLAY_NAME, "lan-viewer-settings.png")
+                put(MediaStore.Images.Media.DISPLAY_NAME, "lan-viewer-connection.png")
                 put(MediaStore.Images.Media.MIME_TYPE, "image/png")
                 put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/ArcheryUiReview")
             })!!
@@ -65,11 +65,40 @@ class LanViewerIntegrationTest {
             val server = field(vm, "viewerServer") as LanViewerServer
             val token = server.token
             val path = "/v/$token/"
+            compose.onNodeWithText("開始錄影").assertDoesNotExist()
+            compose.onNodeWithText("QR Code 與其他連線方式").performScrollTo().performClick()
+            compose.waitUntil(10_000) { compose.onAllNodesWithContentDescription("掃描本次觀看連結").fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithContentDescription("掃描本次觀看連結").performScrollTo().assertExists()
+            compose.onNodeWithText("收起 QR Code 與其他連線方式").performScrollTo().performClick()
+            compose.onNodeWithText("複製觀看連結").assertDoesNotExist()
+            compose.onNodeWithText("返回練習").performClick()
+            if (compose.onAllNodesWithContentDescription("收起操作").fetchSemanticsNodes().isNotEmpty())
+                compose.onNodeWithContentDescription("收起操作").performClick()
+            compose.onNodeWithContentDescription("多裝置 · 已開啟").assertIsDisplayed()
+            assertSame(server, field(vm, "viewerServer"))
+            assertSame(encoder, field(vm, "segmentEncoder"))
+            assertEquals(cameraSession, vm.cameraSessionForFrame())
             val joinId = "a".repeat(48)
             assertTrue(request(server.port, "/join/$joinId", "POST").first.startsWith("HTTP/1.1 200"))
             assertFalse(request(server.port, "/join/$joinId").second.toString(Charsets.UTF_8).contains(token))
             compose.waitUntil(10_000) { vm.viewerShare.value.requests.any { it.id == joinId } }
+            compose.onNodeWithContentDescription("多裝置，1 個觀看要求待確認").assertIsDisplayed().performClick()
+            compose.onNodeWithText("核對碼 AAAAAA").performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("允許觀看").performScrollTo().assertIsDisplayed().performClick()
+            compose.waitUntil(5_000) { vm.viewerShare.value.requests.isEmpty() }
+            compose.onNodeWithText("返回練習").performClick()
+            compose.onNodeWithContentDescription("多裝置 · 已開啟").assertIsDisplayed()
+            compose.onNodeWithContentDescription("顯示操作").performClick()
+            compose.onNodeWithText("設定").performClick()
+            compose.onNodeWithText("開啟電腦觀看").assertDoesNotExist()
+            compose.onNodeWithText("關閉觀看連線").assertDoesNotExist()
+            compose.onNodeWithText("多裝置觀看").performScrollTo().performClick()
+            compose.onNodeWithText("觀看連線已開啟").assertIsDisplayed()
+            compose.onNodeWithContentDescription("返回上一頁").performClick()
+            compose.onNodeWithText("多裝置觀看").assertIsDisplayed().performClick()
+            assertSame(server, field(vm, "viewerServer"))
+            assertSame(encoder, field(vm, "segmentEncoder"))
+            assertEquals(cameraSession, vm.cameraSessionForFrame())
             val approved = request(server.port, "/join/$joinId").second.toString(Charsets.UTF_8)
             assertTrue(approved.contains(token))
             val response = request(server.port, "${path}status")

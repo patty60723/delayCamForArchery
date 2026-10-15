@@ -12,6 +12,7 @@ object Routes {
     const val LIVE = "live"
     const val REPLAY = "replay"
     const val SETTINGS = "settings"
+    const val VIEWER = "viewer"
     const val GALLERY = "gallery"
     const val PLAYER = "player/{clipUri}/{clipName}"
 

@@ -27,6 +27,7 @@ fun LivePracticeLayout(
     modifier: Modifier = Modifier,
     feedbackOnRight: Boolean = false,
     landscapeFeedback: @Composable (Modifier) -> Unit = {},
+    connectionStatus: @Composable (Modifier) -> Unit = {},
 ) {
     var expanded by rememberSaveable { mutableStateOf(false) }
     BoxWithConstraints(modifier.fillMaxSize().testTag("practice-layout")) {
@@ -34,6 +35,8 @@ fun LivePracticeLayout(
             val panelWidth = (maxWidth * 0.42f).coerceIn(220.dp, 300.dp)
             BackHandler(enabled = expanded) { expanded = false }
             video(Modifier.fillMaxSize())
+            if (!expanded) connectionStatus(Modifier.align(Alignment.TopEnd)
+                .padding(top = 8.dp, end = 104.dp).widthIn(max = 180.dp))
             val feedbackWidth = (if (expanded) maxWidth - panelWidth - minOf(maxWidth * 0.27f, 240.dp) - 32.dp else maxWidth - minOf(maxWidth * 0.27f, 240.dp) - 24.dp)
                 .coerceAtLeast(120.dp).coerceAtMost(400.dp)
             landscapeFeedback(Modifier.align(if (feedbackOnRight) Alignment.BottomEnd else Alignment.BottomStart)
@@ -64,7 +67,10 @@ fun LivePracticeLayout(
         } else {
             Column(Modifier.fillMaxSize()) {
                 header(false)
-                video(Modifier.weight(1f).fillMaxWidth())
+                Box(Modifier.weight(1f).fillMaxWidth()) {
+                    video(Modifier.fillMaxSize())
+                    connectionStatus(Modifier.align(Alignment.TopEnd).padding(8.dp).widthIn(max = 200.dp))
+                }
                 Column(Modifier.fillMaxWidth().testTag("practice-controls")) { controls(false) }
             }
         }

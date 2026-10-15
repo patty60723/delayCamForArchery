@@ -38,6 +38,8 @@ import com.archery.delaycam.ui.live.PracticeCameraLayout
 import androidx.compose.ui.geometry.Rect
 import com.archery.delaycam.ui.replay.ReplayScreen
 import com.archery.delaycam.ui.settings.SettingsScreen
+import com.archery.delaycam.ui.viewer.ViewerScreen
+import com.archery.delaycam.BuildConfig
 import java.net.URLDecoder
 
 /**
@@ -147,6 +149,7 @@ private fun AppNavHost(
                 viewModel = viewModel,
                 onOpenSettings = { navController.navigate(Routes.SETTINGS) },
                 onOpenGallery = { navController.navigate(Routes.GALLERY) },
+                onOpenViewer = { navController.navigate(Routes.VIEWER) { launchSingleTop = true } },
                 onOpenSavedClip = onOpenSaved,
                 onPreviewBounds = onPreviewBounds,
             )
@@ -155,7 +158,12 @@ private fun AppNavHost(
             ReplayScreen(viewModel = viewModel, onOpenSavedClip = onOpenSaved)
         }
         composable(Routes.SETTINGS) {
-            SettingsScreen(viewModel = viewModel, onBack = { navController.popBackStack() })
+            SettingsScreen(viewModel = viewModel, onBack = { navController.popBackStack() },
+                onOpenViewer = { navController.navigate(Routes.VIEWER) { launchSingleTop = true } })
+        }
+        if (BuildConfig.LAN_VIEWER_TRIAL) composable(Routes.VIEWER) {
+            ViewerScreen(viewModel, onBack = { navController.popBackStack() },
+                onReturnToPractice = { navController.popBackStack(Routes.LIVE, false) })
         }
         composable(Routes.GALLERY) {
             GalleryScreen(
