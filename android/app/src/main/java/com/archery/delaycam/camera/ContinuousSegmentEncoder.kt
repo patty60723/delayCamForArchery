@@ -3,6 +3,7 @@ package com.archery.delaycam.camera
 import android.graphics.Bitmap
 import android.media.MediaCodec
 import android.media.MediaCodecInfo
+import android.media.MediaCodecList
 import android.media.MediaFormat
 import android.media.MediaMuxer
 import android.os.Handler
@@ -72,13 +73,12 @@ private const val SEGMENT_TARGET_MS = 2000L
  * to upright, no separate orientation-hint step is needed here (unlike
  * the two earlier attempts) - the pixels themselves are already correct.
  *
- * Trade-off accepted for now: the shared conversion round-trips through a
- * lossy JPEG encode/decode (see ImageProxyConversion.kt), so recorded
- * video quality is somewhat below what direct YUV encoding would give,
- * and the conversion's CPU cost eats into the analyzer's per-frame budget
- * (ImageAnalysis's STRATEGY_KEEP_ONLY_LATEST will drop frames it can't
- * keep up with). Worth revisiting once the pipeline is confirmed to
- * actually work at all.
+ * Quality update (0.2.10): CameraX now converts to RGBA natively, removing
+ * the JPEG round trip. The bounded square canvas preserves the source's long
+ * edge in either orientation without a codec restart; playback removes known
+ * padding and export normalizes to the selected 4:3 / 16:9 output. Gesture
+ * inference uses its own smaller copy, allowing capture bitmaps to be recycled.
+ * Actual delivery FPS remains device-dependent (KEEP_ONLY_LATEST drops load).
  *
  * Confirmed on-device that this version does eliminate the SPS/PPS
  * mismatch that plagued the old Recorder-based approach - zero
@@ -138,11 +138,10 @@ class ContinuousSegmentEncoder(
      * Call for every frame from the same ImageAnalysis.Analyzer gesture
      * detection already uses, already converted to an upright Bitmap by
      * the caller (see class doc). Lazily configures the encoder on the
-     * first call using that bitmap's dimensions.
+     * first call using a bounded rotation-safe square canvas.
      */
     fun onFrame(bitmap: Bitmap, pictureAspect: Float = bitmap.width.toFloat() / bitmap.height) {
-        val crop = captureSize(bitmap.width, bitmap.height, pictureAspect)
-        configureIfNeeded(crop.first, crop.second)
+        configureIfNeeded(bitmap.width, bitmap.height)
         val surface = inputSurface ?: return
         // Timed to test one theory for the remaining periodic stalls: this
         // Surface is the encoder's input, backed by a small buffer pool
@@ -174,16 +173,31 @@ class ContinuousSegmentEncoder(
     @Synchronized
     private fun configureIfNeeded(width: Int, height: Int) {
         if (codec != null) return
-        val format = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, width, height).apply {
-            setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
-            setInteger(MediaFormat.KEY_BIT_RATE, BIT_RATE)
-            setInteger(MediaFormat.KEY_FRAME_RATE, FRAME_RATE)
-            setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, I_FRAME_INTERVAL_SEC)
+        val codecs = MediaCodecList(MediaCodecList.REGULAR_CODECS)
+        val candidates = encoderCanvasCandidates(width, height)
+        val supported = candidates.firstNotNullOfOrNull { side ->
+            val format = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, side, side).apply {
+                setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
+                setInteger(MediaFormat.KEY_BIT_RATE, BIT_RATE)
+                setInteger(MediaFormat.KEY_FRAME_RATE, FRAME_RATE)
+                setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, I_FRAME_INTERVAL_SEC)
+            }
+            codecs.findEncoderForFormat(format)?.let { Triple(it, format, side) }
         }
-        val newCodec = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
-        newCodec.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
-        val surface = newCodec.createInputSurface()
-        newCodec.start()
+        checkNotNull(supported) { "No AVC encoder supports a bounded rotation-safe canvas" }
+        Log.i(TAG, "capture source=${width}x$height canvas=${supported.third}x${supported.third} " +
+            "codec=${supported.first} fallback=${supported.third != candidates.first()}")
+        val newCodec = MediaCodec.createByCodecName(supported.first)
+        var surface: Surface? = null
+        try {
+            newCodec.configure(supported.second, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+            surface = newCodec.createInputSurface()
+            newCodec.start()
+        } catch (failure: Exception) {
+            surface?.release()
+            newCodec.release()
+            throw failure
+        }
 
         codec = newCodec
         inputSurface = surface

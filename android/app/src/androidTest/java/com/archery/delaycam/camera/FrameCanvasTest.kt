@@ -7,6 +7,25 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class FrameCanvasTest {
+    @Test fun squareCanvasRetainsNativePixelsInBothOrientations() {
+        val output = Bitmap.createBitmap(1280, 1280, Bitmap.Config.ARGB_8888)
+        val wide = Bitmap.createBitmap(1280, 960, Bitmap.Config.ARGB_8888)
+        val tall = Bitmap.createBitmap(960, 1280, Bitmap.Config.ARGB_8888)
+        try {
+            wide.eraseColor(Color.GREEN); tall.eraseColor(Color.RED)
+            drawFrameFit(Canvas(output), tall, 9f / 16f)
+            assertEquals(Color.BLACK, output.getPixel(279, 640))
+            assertEquals(Color.RED, output.getPixel(280, 640))
+            assertEquals(Color.RED, output.getPixel(999, 640))
+            assertEquals(Color.BLACK, output.getPixel(1000, 640))
+            drawFrameFit(Canvas(output), wide, 16f / 9f)
+            assertEquals(Color.BLACK, output.getPixel(640, 279))
+            assertEquals(Color.GREEN, output.getPixel(640, 280))
+            assertEquals(Color.GREEN, output.getPixel(640, 999))
+            assertEquals(Color.BLACK, output.getPixel(640, 1000))
+        } finally { output.recycle(); wide.recycle(); tall.recycle() }
+    }
+
     @Test fun sixteenNineCropsEdgesRatherThanStretchingOrRetainingOldFrame() {
         val source = Bitmap.createBitmap(400, 300, Bitmap.Config.ARGB_8888)
         val output = Bitmap.createBitmap(400, 300, Bitmap.Config.ARGB_8888)

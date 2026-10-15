@@ -73,7 +73,9 @@ class GestureEngine(
             while (frameContexts.size > 64) frameContexts.remove(frameContexts.keys.first())
         }
         try {
-            r.recognizeAsync(BitmapImageBuilder(bitmap).build(), timestampMs)
+            // Inference owns a small independent image. Never retain the high-resolution
+            // capture bitmap asynchronously; the caller may recycle it after encoding.
+            r.recognizeAsync(BitmapImageBuilder(gestureFrameCopy(bitmap)).build(), timestampMs)
         } catch (e: Exception) {
             synchronized(frameContexts) { frameContexts.remove(timestampMs) }
             Log.w(TAG, "frame analyze() failed, skipping this frame", e)
@@ -102,5 +104,13 @@ class GestureEngine(
         synchronized(frameContexts) { frameContexts.clear() }
         available = false
     }
+}
+
+internal fun gestureFrameCopy(bitmap: Bitmap): Bitmap {
+    val scale = minOf(1f, 640f / maxOf(bitmap.width, bitmap.height))
+    val width = (bitmap.width * scale).toInt().coerceAtLeast(1)
+    val height = (bitmap.height * scale).toInt().coerceAtLeast(1)
+    val resized = Bitmap.createScaledBitmap(bitmap, width, height, true)
+    return if (resized === bitmap) bitmap.copy(Bitmap.Config.ARGB_8888, false) else resized
 }
 

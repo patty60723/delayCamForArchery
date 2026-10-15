@@ -32,6 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.core.content.ContextCompat
 import com.archery.delaycam.camera.toRotatedBitmap
+import com.archery.delaycam.camera.delayImageAnalysis
 import com.archery.delaycam.navigation.DelayCamNavHost
 import com.archery.delaycam.ui.DelayCamViewModel
 import com.archery.delaycam.ui.theme.DelayCamTheme
@@ -146,20 +147,11 @@ class MainActivity : ComponentActivity() {
         try {
             val cameraProvider = awaitCameraProvider()
 
-            val imageAnalysis = ImageAnalysis.Builder()
-                .setTargetAspectRatio(androidx.camera.core.AspectRatio.RATIO_4_3)
-                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                .build()
+            val imageAnalysis = delayImageAnalysis()
             this.imageAnalysis = imageAnalysis
             updateCameraRotation()
-            // See ContinuousSegmentEncoder's doc comment for the two earlier
-            // approaches that failed on-device (a second Preview use case
-            // rejected at bind time; a hand-rolled YUV-buffer copy that
-            // threw on every frame). This converts each frame to a Bitmap
-            // exactly once - the same conversion GestureEngine used to do
-            // internally - and shares it with both consumers, closing the
-            // ImageProxy itself once both are done with it (neither one
-            // owns it anymore).
+            // One RGBA camera stream feeds the continuous encoder and a smaller
+            // independent gesture image; no extra camera use case or JPEG conversion.
             imageAnalysis.setAnalyzer(viewModel.cameraAnalysisExecutor) { proxy ->
                 try {
                     val sessionId = viewModel.cameraSessionForFrame() ?: return@setAnalyzer
@@ -176,13 +168,14 @@ class MainActivity : ComponentActivity() {
                         lastLoggedRotationDegrees = rotationDegrees
                         Log.d(
                             "MainActivity",
-                            "camera frame ${proxy.width}x${proxy.height}, " +
+                            "camera frame ${proxy.width}x${proxy.height}, format=${proxy.format}, target=1280x960 (720p crop), " +
                                 "imageInfo.rotationDegrees=$rotationDegrees"
                         )
                     }
                     val bitmap = proxy.toRotatedBitmap()
                     val timestampMs = proxy.imageInfo.timestamp / 1_000_000L
-                    viewModel.onCameraFrame(bitmap, timestampMs, sessionId)
+                    try { viewModel.onCameraFrame(bitmap, timestampMs, sessionId) }
+                    finally { bitmap.recycle() }
                 } catch (e: Exception) {
                     Log.w("MainActivity", "frame conversion failed, skipping this frame", e)
                 } finally {
