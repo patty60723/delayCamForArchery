@@ -140,8 +140,9 @@ class ContinuousSegmentEncoder(
      * the caller (see class doc). Lazily configures the encoder on the
      * first call using that bitmap's dimensions.
      */
-    fun onFrame(bitmap: Bitmap) {
-        configureIfNeeded(bitmap.width, bitmap.height)
+    fun onFrame(bitmap: Bitmap, pictureAspect: Float = bitmap.width.toFloat() / bitmap.height) {
+        val crop = captureSize(bitmap.width, bitmap.height, pictureAspect)
+        configureIfNeeded(crop.first, crop.second)
         val surface = inputSurface ?: return
         // Timed to test one theory for the remaining periodic stalls: this
         // Surface is the encoder's input, backed by a small buffer pool
@@ -152,7 +153,7 @@ class ContinuousSegmentEncoder(
         // here could block waiting for a free input buffer, which would
         // mean actual frame capture pauses too - not just the file cut.
         val lockStartNs = System.nanoTime()
-        frameShapes.submitted(lockStartNs / 1_000L, bitmap.width.toFloat() / bitmap.height)
+        frameShapes.submitted(lockStartNs / 1_000L, pictureAspect)
         val canvas = try {
             surface.lockHardwareCanvas()
         } catch (e: Exception) {
@@ -164,7 +165,7 @@ class ContinuousSegmentEncoder(
             Log.w(TAG, "lockHardwareCanvas blocked for ${lockMs}ms - encoder input surface backpressure")
         }
         try {
-            drawFrameFit(canvas, bitmap)
+            drawFrameFit(canvas, bitmap, pictureAspect)
         } finally {
             surface.unlockCanvasAndPost(canvas)
         }

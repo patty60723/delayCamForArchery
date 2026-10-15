@@ -9,6 +9,7 @@
 | Toast | DelayCamNavHost / RecordingControls / SaveStatusNotice | 本文件 Feedback | 一般短提示；保存狀態持續顯示 | RecordingPlaybackUiTest |
 | CRUD | DelayCamViewModel / DeleteClipAction | 本文件 Playback | 手動開啟保存結果；回放／已存影片共用刪除確認 | ReplayReviewDeleteTest / RecordingPlaybackUiTest / 裝置驗收 |
 | Recording | RecordingScreenLayout / RecordingControls | 本文件 Recording | 一般頂部列；橫向練習浮動 compact 版本，共用狀態與按鈕規則 | RecordingPlaybackUiTest / LivePracticeUiTest |
+| Capture format | AppSettings / SettingsRepository / CaptureAspectControl / FrameCanvas / VideoAspectNormalizer | 本文件 Capture format | 4:3／16:9；完整／滿版獨立 | CaptureSizeTest / VideoAspectExportTest / RotationContinuityTest |
 | Practice controls | LivePracticeLayout / LiveSaveActions | 本文件 Practice Layout and Warmup | 直向下方；橫向非模態可收起面板 | LivePracticeUiTest |
 
 表格、日期輸入、選單、表單與網頁 scrollbar 不適用於這次原生 Android 變更。
@@ -72,3 +73,11 @@ SegmentInfo.playbackItem 把有效影像比例傳到私有回放；匯出由 Cli
 ## Picture mode (0.2.8)
 
 使用者要求保留原比例並可自行選擇滿版。AppSettings.pictureMode / SettingsRepository 是持久化來源；PictureModeControl 使用可選語意按鈕；VideoPlayer / activePictureScale 是延遲、單箭回放與已保存播放器的共用縮放擁有者。FIT 預設，FILL 等比填滿並裁邊，設定說明只有觀看裁切、錄影仍完整。舊設定與未知值回 FIT；即時小窗保持完整構圖。變更不清空緩衝、不重建播放器／相機、不改 MediaStore 原片。ActivePictureFitTest 核对完整／滿版涵蓋範圍與比例；RotationContinuityTest 驗證設定持久化、實際 PlayerView 模式及相機／緩衝不中斷；ReplayReviewDeleteTest 保存完整比例，切換兩種模式但保留 MediaItem 與緩衝世代，並產出對照截圖。
+
+## Capture format (0.2.9)
+
+使用者確認將取景比例（4:3／16:9，直拿3:4／9:16）與觀看方式分開。AppSettings.captureAspect / SettingsRepository 擁有持久選擇，缺少／未知值為4:3；既有 pictureMode 保留。CaptureAspectControl 共用 Material 可選按鈕，錄影 STARTING／RECORDING／STOPPING 期間停用並說明；ViewModel 亦阻擋同一變更。比率變更不重建相機／編碼器，不清空緩衝；MainActivity 仍用4:3相機來源，FrameCanvas 中心裁切新影格到所選比例。即時 PiP 同一中心裁切，延遲跟隨正在播放的片段，不能因選了新比例回溯改舊影格。
+
+ClipExporter 與完整錄影共用 VideoAspectNormalizer：保留固定編碼器畫布，用各來源範圍的比例，必要時於保存轉成固定開始比例／方向的標準MP4。已知內部黑邊去除；不同方向等比放入同一輸出畫布，混合未知來源保留完整畫布；不以當下螢幕方向裁掉舊片段。整段錄影以開始時取景比例／方向固定，保存期間顯示真實 SAVING，完成 MediaStore 才成功。轉換／存檔失敗保留可重試來源，不宣稱已保存。觀看 FILL 只再裁切顯示，不改保存格式。舊影片不重編。
+
+ViewModel settings 收集忽略尚未保存的舊值，避免快速切換時先前 DataStore 回覆覆蓋最新選擇；相同值不再寫入。設定頁介面語言仍為繁中，不新增權限。

@@ -7,6 +7,22 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class FrameCanvasTest {
+    @Test fun sixteenNineCropsEdgesRatherThanStretchingOrRetainingOldFrame() {
+        val source = Bitmap.createBitmap(400, 300, Bitmap.Config.ARGB_8888)
+        val output = Bitmap.createBitmap(400, 300, Bitmap.Config.ARGB_8888)
+        try {
+            source.eraseColor(Color.GREEN)
+            val paint = android.graphics.Paint().apply { color = Color.RED }
+            Canvas(source).drawRect(0f, 0f, 400f, 30f, paint)
+            Canvas(source).drawRect(0f, 270f, 400f, 300f, paint)
+            drawFrameFit(Canvas(output), source, 16f / 9f)
+            assertEquals(Color.BLACK, output.getPixel(200, 5))
+            assertEquals(Color.GREEN, output.getPixel(200, 40))
+            assertEquals(Color.GREEN, output.getPixel(200, 260))
+            drawFrameFit(Canvas(output), source, 4f / 3f)
+            assertEquals(Color.RED, output.getPixel(200, 5))
+        } finally { source.recycle(); output.recycle() }
+    }
     @Test fun changingOrientationFitsWholeFrameAndClearsPreviousPixels() {
         val output = Bitmap.createBitmap(400, 300, Bitmap.Config.ARGB_8888)
         val wide = Bitmap.createBitmap(400, 300, Bitmap.Config.ARGB_8888)

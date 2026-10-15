@@ -80,6 +80,7 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
 
     private val _settings = MutableStateFlow(AppSettings())
     val settings: StateFlow<AppSettings> = _settings.asStateFlow()
+    private var pendingSettings: AppSettings? = null
 
     private val _appState = MutableStateFlow(AppState.LIVE)
     val appState: StateFlow<AppState> = _appState.asStateFlow()
@@ -131,6 +132,8 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
     private var recordingHadGaps = false
     private var recordingStoppedInBackground = false
     private var pendingRecordingExport: File? = null
+    private var pendingRecordingRanges: List<com.archery.delaycam.gallery.PictureRange> = emptyList()
+    private var pendingRecordingAspect: Float? = null
     private var recordingStopTimeout: Job? = null
     private var clipSaveJob: Job? = null
     private var replaySnapshot: ClipSnapshot? = null
@@ -142,7 +145,7 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
     private var practiceVisible = false
 
     private sealed interface RecordingCommand {
-        data object Start : RecordingCommand
+        data class Start(val aspect: Float) : RecordingCommand
         data class Append(val segment: SegmentInfo, val lease: ImmutableSegmentStore.Lease?) : RecordingCommand
         data object Stop : RecordingCommand
         data class Cleanup(val prefix: String, val shotJob: Job?) : RecordingCommand
@@ -217,11 +220,13 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
      * too, matching the web prototype's "buffer runs regardless of screen"
      * behaviour.
      */
-    val previewUseCase: Preview = Preview.Builder().build()
+    val previewUseCase: Preview = Preview.Builder().setTargetAspectRatio(androidx.camera.core.AspectRatio.RATIO_4_3).build()
 
     init {
         viewModelScope.launch {
             settingsRepository.settingsFlow.collect { loaded ->
+                if (pendingSettings != null && pendingSettings != loaded) return@collect
+                pendingSettings = null
                 _settings.value = loaded
                 applyBufferWindow(loaded)
             }
@@ -355,8 +360,9 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
     /** Only called on cameraAnalysisExecutor, with the session captured before conversion. */
     fun onCameraFrame(bitmap: Bitmap, timestampMs: Long, sessionId: Long) {
         if (!captureSession.isCurrent(sessionId)) return
-        _cameraAspectRatio.value = bitmap.width.toFloat() / bitmap.height
-        segmentEncoder?.onFrame(bitmap)
+        val aspect = settings.value.captureAspect.ratioFor(bitmap.width, bitmap.height)
+        _cameraAspectRatio.value = aspect
+        segmentEncoder?.onFrame(bitmap, aspect)
         if (captureSession.isCurrent(sessionId)) {
             gestureEngine.analyzeBitmap(bitmap, timestampMs)
         }
@@ -401,6 +407,12 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
 
     fun updateSettings(update: (AppSettings) -> AppSettings) {
         val next = update(_settings.value)
+        if (next == _settings.value) return
+        if (next.captureAspect != _settings.value.captureAspect && recordingLifecycle.phase != RecordingPhase.IDLE) {
+            _toast.value = "請先停止錄影，再切換取景比例"
+            return
+        }
+        pendingSettings = next
         _settings.value = next
         applyBufferWindow(next)
         viewModelScope.launch { settingsRepository.save(next) }
@@ -546,7 +558,9 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
                 _recordingElapsedSec.value = 0
                 _recordingSave.value = SaveStatus()
                 publishRecordingPhase()
-                recordingCommands.trySend(RecordingCommand.Start)
+                val wide = _cameraAspectRatio.value > 1f
+                val recordAspect = settings.value.captureAspect.ratioFor(if (wide) 4 else 3, if (wide) 3 else 4)
+                recordingCommands.trySend(RecordingCommand.Start(recordAspect))
             }
             RecordingPhase.RECORDING -> requestRecordingStop()
             RecordingPhase.STARTING, RecordingPhase.STOPPING -> Unit
@@ -591,9 +605,9 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
     private suspend fun runRecordingCommands() {
         for (command in recordingCommands) {
             when (command) {
-                RecordingCommand.Start -> {
+                is RecordingCommand.Start -> {
                     try {
-                        continuousRecordingSession.start()
+                        continuousRecordingSession.start(command.aspect)
                         recordingLifecycle.started()
                         publishRecordingPhase()
                     } catch (e: Exception) {
@@ -620,6 +634,8 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
                         _recordingSave.value = _recordingSave.value.copy(displayName = displayName)
                         try {
                             pendingRecordingExport = continuousRecordingSession.stopToFile()
+                            pendingRecordingRanges = continuousRecordingSession.presentationRanges()
+                            pendingRecordingAspect = continuousRecordingSession.outputAspect
                             exportPendingRecording(displayName)
                         } catch (e: Exception) {
                             Log.e(TAG, "recording finalization/save failed", e)
@@ -649,9 +665,11 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
 
     private suspend fun exportPendingRecording(displayName: String) {
         val file = pendingRecordingExport ?: return
-        val uri = withContext(Dispatchers.IO) {
-            MediaStoreExport.saveVideoToMediaStore(getApplication(), file, displayName)
-        }
+        val normalized = com.archery.delaycam.camera.VideoAspectNormalizer.normalize(
+            getApplication(), file, pendingRecordingRanges, pendingRecordingAspect)
+        val uri = try { withContext(Dispatchers.IO) {
+            MediaStoreExport.saveVideoToMediaStore(getApplication(), normalized.file, displayName)
+        } } finally { if (normalized.file != file) normalized.file.delete() }
         pendingRecordingExport = null
         withContext(Dispatchers.IO) { file.delete() }
         val message = when {

@@ -20,6 +20,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.archery.delaycam.settings.SettingsRepository
 import com.archery.delaycam.settings.PreviewCorner
 import com.archery.delaycam.settings.PictureMode
+import com.archery.delaycam.settings.CaptureAspect
 import com.archery.delaycam.R
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.flow.first
@@ -66,6 +67,8 @@ class RotationContinuityTest {
                 compose.onNodeWithContentDescription("顯示操作").performClick()
                 compose.onNodeWithText("設定").performClick()
                 val beforeModeSession = vm.cameraSessionForFrame()
+                compose.onNodeWithText("16:9").performScrollTo().performClick().assertIsSelected()
+                runBlocking { repository.settingsFlow.first { it.captureAspect == CaptureAspect.SIXTEEN_NINE } }
                 val beforeModeGeneration = field(vm, "bufferGeneration")
                 val beforeModeEncoder = field(vm, "segmentEncoder")
                 compose.onNodeWithText("滿版").performScrollTo().performClick().assertIsSelected()
@@ -93,12 +96,21 @@ class RotationContinuityTest {
                 val generation = field(vm, "bufferGeneration")
                 val encoder = field(vm, "segmentEncoder")
                 assertNotNull(encoder)
+                compose.waitUntil(5_000) { kotlin.math.abs(vm.cameraAspectRatio.value - 16f / 9f) < .001f }
                 lateinit var preview: PreviewView
                 scenario.onActivity {
                     preview = it.window.decorView.findViewWithTag("live-camera-preview-host")
                     vm.toggleContinuousRecording()
                 }
                 compose.waitUntil(10_000) { vm.recordingPhase.value == RecordingPhase.RECORDING }
+                compose.onNodeWithContentDescription("顯示操作").performClick()
+                compose.onNodeWithText("設定").performClick()
+                compose.onNodeWithText("16:9").performScrollTo().assertIsNotEnabled()
+                compose.onNodeWithText("4:3").assertIsNotEnabled()
+                scenario.onActivity { vm.updateSettings { it.copy(captureAspect = CaptureAspect.FOUR_THREE) } }
+                assertEquals(CaptureAspect.SIXTEEN_NINE, vm.settings.value.captureAspect)
+                compose.onNodeWithText("‹").performScrollTo().performClick()
+                compose.onNodeWithContentDescription("收起操作").performClick()
 
                 fun physicalRotation() = activity.applicationContext.getSystemService(DisplayManager::class.java)
                     .getDisplay(activity.window.decorView.display.displayId).rotation
@@ -156,7 +168,7 @@ class RotationContinuityTest {
                 }
                 screenshot("rotation-recording-landscape")
                 scenario.onActivity { vm.toggleContinuousRecording() }
-                compose.waitUntil(15_000) { vm.recordingSave.value.phase == SavePhase.SAVED }
+                compose.waitUntil(45_000) { vm.recordingSave.value.phase == SavePhase.SAVED }
                 savedUri = vm.recordingSave.value.uri
                 assertNotNull(savedUri)
                 val retriever = MediaMetadataRetriever()

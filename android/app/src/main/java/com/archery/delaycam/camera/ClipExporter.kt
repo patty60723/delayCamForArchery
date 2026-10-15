@@ -34,10 +34,13 @@ object ClipExporter {
         val tempFile = File.createTempFile("archery_export", ".mp4", context.cacheDir)
         try {
             val ranges = concatenate(segments, tempFile)
-            val uri = MediaStoreExport.saveVideoToMediaStore(context, tempFile, displayName)
-            try { ClipPresentationStore(context).write(uri, ranges) }
-            catch (failure: Exception) { android.util.Log.w("ClipExporter", "Presentation metadata unavailable", failure) }
-            uri
+            val normalized = VideoAspectNormalizer.normalize(context, tempFile, ranges)
+            try {
+                val uri = MediaStoreExport.saveVideoToMediaStore(context, normalized.file, displayName)
+                try { ClipPresentationStore(context).write(uri, normalized.ranges) }
+                catch (failure: Exception) { android.util.Log.w("ClipExporter", "Presentation metadata unavailable", failure) }
+                uri
+            } finally { if (normalized.file != tempFile) normalized.file.delete() }
         } finally {
             tempFile.delete()
         }

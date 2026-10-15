@@ -19,8 +19,8 @@ android {
         minSdk = 29
         targetSdk = 34
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        versionCode = 11
-        versionName = "0.2.8"
+        versionCode = 13
+        versionName = "0.2.9"
         buildConfigField("boolean", "FAST_RESUME_TRIAL", fastResumeTrial.toString())
         manifestPlaceholders["appIcon"] = if (fastResumeTrial) "@mipmap/ic_launcher_test" else "@mipmap/ic_launcher"
         manifestPlaceholders["appLabel"] = if (fastResumeTrial) "測試${versionCode}·箭影" else "@string/app_name"
@@ -100,6 +100,8 @@ dependencies {
     val media3Version = "1.4.1"
     implementation("androidx.media3:media3-exoplayer:$media3Version")
     implementation("androidx.media3:media3-ui:$media3Version")
+    implementation("androidx.media3:media3-transformer:$media3Version")
+    implementation("androidx.media3:media3-effect:$media3Version")
 
     // --- Settings persistence (spec 4) ---
     implementation("androidx.datastore:datastore-preferences:1.1.1")

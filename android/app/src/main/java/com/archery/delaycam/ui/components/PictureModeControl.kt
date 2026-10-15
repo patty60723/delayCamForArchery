@@ -12,7 +12,7 @@ import com.archery.delaycam.settings.PictureMode
 @Composable
 fun PictureModeControl(mode: PictureMode, onChange: (PictureMode) -> Unit) {
     Column(Modifier.fillMaxWidth().padding(top = 16.dp)) {
-        Text("攝影畫面顯示", style = MaterialTheme.typography.titleSmall)
+        Text("觀看方式", style = MaterialTheme.typography.titleSmall)
         Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             PictureMode.entries.forEach { option ->
                 OutlinedButton(onClick = { onChange(option) }, modifier = Modifier.weight(1f)
@@ -23,7 +23,7 @@ fun PictureModeControl(mode: PictureMode, onChange: (PictureMode) -> Unit) {
                 }
             }
         }
-        Text("完整畫面保留全部動作；滿版填滿視窗，邊緣會裁切。只影響觀看，錄影保留完整畫面。",
+        Text("完整畫面保留所選取景；滿版填滿視窗，會再裁切邊緣。觀看方式不改變存檔比例。",
             Modifier.padding(top = 8.dp), style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
     }

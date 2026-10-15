@@ -35,7 +35,7 @@ fun LiveCameraPreview(
         AndroidView(factory = { context -> PreviewView(context).apply {
             tag = "live-camera-preview-host"
             implementationMode = PreviewView.ImplementationMode.COMPATIBLE
-            scaleType = PreviewView.ScaleType.FIT_CENTER
+            scaleType = PreviewView.ScaleType.FILL_CENTER
             preview.surfaceProvider = surfaceProvider
         } },
             modifier = Modifier.fillMaxWidth().aspectRatio(aspectRatio)

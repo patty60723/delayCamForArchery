@@ -24,10 +24,12 @@ class SettingsRepository(private val context: Context) {
         val PREVIEW_CORNER = stringPreferencesKey("previewCorner")
         val DOMINANT_HAND = stringPreferencesKey("dominantHand")
         val PICTURE_MODE = stringPreferencesKey("pictureMode")
+        val CAPTURE_ASPECT = stringPreferencesKey("captureAspect")
     }
 
     val settingsFlow: Flow<AppSettings> = context.settingsDataStore.data.map { prefs ->
         AppSettings(
+            captureAspect = if (prefs[Keys.CAPTURE_ASPECT] == "SIXTEEN_NINE") CaptureAspect.SIXTEEN_NINE else CaptureAspect.FOUR_THREE,
             pictureMode = if (prefs[Keys.PICTURE_MODE] == "FILL") PictureMode.FILL else PictureMode.FIT,
             delaySec = prefs[Keys.DELAY_SEC] ?: 5,
             backtrackSec = prefs[Keys.BACKTRACK_SEC] ?: 8,
@@ -57,6 +59,7 @@ class SettingsRepository(private val context: Context) {
             prefs[Keys.PREVIEW_CORNER] = settings.previewCorner.name
             prefs[Keys.DOMINANT_HAND] = settings.dominantHand.name
             prefs[Keys.PICTURE_MODE] = settings.pictureMode.name
+            prefs[Keys.CAPTURE_ASPECT] = settings.captureAspect.name
         }
     }
 }

@@ -147,6 +147,7 @@ class MainActivity : ComponentActivity() {
             val cameraProvider = awaitCameraProvider()
 
             val imageAnalysis = ImageAnalysis.Builder()
+                .setTargetAspectRatio(androidx.camera.core.AspectRatio.RATIO_4_3)
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                 .build()
             this.imageAnalysis = imageAnalysis

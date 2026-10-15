@@ -43,10 +43,14 @@ class ContinuousRecordingSession(private val context: Context) {
     private var videoTrackIndex = -1
     private var timeline = SegmentTimeline()
     private var tempFile: File? = null
+    private val ranges = mutableListOf<com.archery.delaycam.gallery.PictureRange>()
+    var outputAspect: Float? = null
+        private set
+    fun presentationRanges(): List<com.archery.delaycam.gallery.PictureRange> = ranges.toList()
 
     val isRecording: Boolean get() = muxer != null
 
-    suspend fun start() = withContext(Dispatchers.IO) {
+    suspend fun start(aspect: Float? = null) = withContext(Dispatchers.IO) {
         mutex.withLock {
             if (muxer != null) return@withLock
             val file = File.createTempFile("archery_session", ".mp4", context.cacheDir)
@@ -60,6 +64,8 @@ class ContinuousRecordingSession(private val context: Context) {
             muxerStarted = false
             videoTrackIndex = -1
             timeline = SegmentTimeline()
+            ranges.clear()
+            outputAspect = aspect
         }
     }
 
@@ -95,6 +101,7 @@ class ContinuousRecordingSession(private val context: Context) {
                     extractor.advance()
                 }
                 timeline.endSegment()
+                ranges.add(com.archery.delaycam.gallery.PictureRange(timeline.durationUs / 1000L, segment.contentAspectRatio))
             } finally {
                 extractor.release()
             }
