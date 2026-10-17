@@ -1,19 +1,20 @@
-name: Build and verify requested camera source APK
+name: Build and verify LAN viewer trial APK
 
 on:
   push:
     branches:
-      - codex/apk-delay-playback-fix
-      - codex/recording-playback-ux
+      - codex/lan-viewer-prototype
     paths-ignore:
       - "docs/**"
   workflow_dispatch:
 
 env:
   ORG_GRADLE_PROJECT_fastResumeTrial: "true"
+  ORG_GRADLE_PROJECT_lanViewerTrial: "true"
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   build:
@@ -31,22 +32,41 @@ jobs:
       - uses: android-actions/setup-android@v3
         with:
           packages: platform-tools
-      - uses: actions/cache@v4
+      - uses: actions/cache/restore@v4
+        id: lan-signing-key
         with:
           path: ~/.android/debug.keystore
-          key: delaycam-debug-keystore-v3
+          key: delaycam-lan-viewer-signing-v1
       - name: Prepare cached debug signing key
         run: |
           mkdir -p "$HOME/.android"
           if [ ! -f "$HOME/.android/debug.keystore" ]; then
+            if [ -f ../docs/lan-viewer-signing-cert.sha256 ]; then
+              echo "::error::The pinned LAN signing cache is missing. Restore the key; do not rotate an installed test package."
+              exit 1
+            fi
             keytool -genkeypair -keystore "$HOME/.android/debug.keystore" -storepass android -keypass android -alias androiddebugkey -dname "CN=Android Debug,O=Android,C=US" -keyalg RSA -keysize 2048 -validity 10000
           fi
           echo "DELAYCAM_DEBUG_KEYSTORE=$HOME/.android/debug.keystore" >> "$GITHUB_ENV"
+          keytool -exportcert -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey | sha256sum | cut -d ' ' -f 1 > app/build-signing-cert.sha256
+          if [ -f ../docs/lan-viewer-signing-cert.sha256 ]; then
+            cmp app/build-signing-cert.sha256 ../docs/lan-viewer-signing-cert.sha256
+          fi
+      - uses: actions/cache/save@v4
+        if: steps.lan-signing-key.outputs.cache-hit != 'true'
+        with:
+          path: ~/.android/debug.keystore
+          key: delaycam-lan-viewer-signing-v1
       - uses: gradle/actions/setup-gradle@v4
       - name: Install Android SDK packages
         run: sdkmanager "platforms;android-34" "build-tools;34.0.0"
       - name: Lint design context
         run: npx -y -p @google/design.md designmd lint ../DESIGN.md
+      - name: Verify browser palette and syntax
+        run: |
+          python3 ../scripts/sync-viewer-theme.py --check
+          node --check app/src/main/assets/viewer/viewer.js
+          node --check app/src/main/assets/viewer/join.js
       - name: Run unit tests and build APKs
         run: |
           chmod +x gradlew
@@ -72,20 +92,20 @@ jobs:
         run: |
           "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --verbose --print-certs app/build/outputs/apk/debug/app-debug.apk
           signed_apk_cert=$("$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --print-certs app/build/outputs/apk/debug/app-debug.apk | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')
-          test "$signed_apk_cert" = "a2e1d47174b2a24a99045fd4795ba37f97f115d3143733067a4859ce8555b042"
+          test "$signed_apk_cert" = "$(cat app/build-signing-cert.sha256)"
           "$ANDROID_HOME/build-tools/34.0.0/aapt" dump badging app/build/outputs/apk/debug/app-debug.apk > app/build/apk-metadata.txt
           python3 - <<'PYMETA'
           from pathlib import Path
           metadata = Path('app/build/apk-metadata.txt').read_text()
-          assert "name='com.archery.delaycam.fastresume'" in metadata
-          assert "versionName='0.2.14-fast-return-test'" in metadata
-          assert "application-label:'測試18·箭影'" in metadata
+          assert "name='com.archery.delaycam.lanviewer'" in metadata
+          assert "versionName='0.3.2-lan-viewer-test'" in metadata
+          assert "application-label:'多機21·箭影'" in metadata
           print('COEXISTENCE_APK_IDENTITY_OK')
           PYMETA
           sha256sum app/build/outputs/apk/debug/app-debug.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: delaycam-fast-return-comparison-apk
+          name: delaycam-lan-viewer-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
@@ -111,6 +131,13 @@ jobs:
           distribution: temurin
           java-version: '17'
       - uses: gradle/actions/setup-gradle@v4
+      - name: Download single-device test18 baseline for coexistence
+        uses: actions/download-artifact@v4
+        with:
+          name: delaycam-fast-return-comparison-apk
+          run-id: 38727110843
+          github-token: ${{ github.token }}
+          path: android/app/build/baseline18
       - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -128,17 +155,24 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none -camera-front emulated
           script: |
             chmod +x gradlew
-            ./gradlew :app:assembleDebug -PfastResumeTrial=false --no-daemon --stacktrace
-            adb install -r app/build/outputs/apk/debug/app-debug.apk
+            adb install -r app/build/baseline18/app-debug.apk
             ./gradlew :app:connectedDebugAndroidTest -PfastResumeTrial=true --no-daemon --stacktrace || { mkdir -p app/build/ui-screenshots; adb pull /sdcard/Pictures/ArcheryUiReview app/build/ui-screenshots; exit 1; }
             adb install -r app/build/outputs/apk/debug/app-debug.apk
-            adb shell pm path com.archery.delaycam.delayfix3 > app/build/stable-installed.txt
-            adb shell pm path com.archery.delaycam.fastresume > app/build/trial-installed.txt
+            adb shell pm path com.archery.delaycam.fastresume > app/build/stable-installed.txt
+            adb shell pm path com.archery.delaycam.lanviewer > app/build/trial-installed.txt
             test -s app/build/stable-installed.txt
             test -s app/build/trial-installed.txt
             echo COEXISTENCE_INSTALL_OK
+            mkdir -p app/build/viewer-ci
+            adb pull /sdcard/Download/ArcheryViewerCi/. app/build/viewer-ci/
             mkdir -p app/build/ui-screenshots
             adb pull /sdcard/Pictures/ArcheryUiReview app/build/ui-screenshots
+      - name: Verify desktop browser against Android-captured H264
+        run: |
+          python3 -m pip install playwright==1.58.0
+          viewer_sample=$(find app/build/viewer-ci -name '*.mp4' | head -1)
+          test -n "$viewer_sample"
+          python3 ../scripts/test-lan-viewer.py --media "$viewer_sample" --browser /usr/bin/google-chrome --output app/build/viewer-browser-results
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -147,4 +181,25 @@ jobs:
             android/app/build/reports/androidTests/
             android/app/build/outputs/androidTest-results/
             android/app/build/ui-screenshots/
+            android/app/build/viewer-ci/
+            android/app/build/viewer-browser-results/
+          retention-days: 14
+
+  browser-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Decode H264 and exercise viewer recovery
+        run: |
+          python3 -m pip install playwright==1.58.0
+          python3 scripts/test-lan-viewer.py --media android/app/src/androidTest/assets/clip-fixture.mp4 --browser /usr/bin/google-chrome --output browser-results
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: viewer-desktop-test-results
+          path: browser-results/
           retention-days: 14

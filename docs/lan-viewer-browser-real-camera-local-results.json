@@ -1,0 +1,23 @@
+{
+  "checks": {
+    "no_media_before_phone_approval": true,
+    "join_denial_offers_retry": true,
+    "join_retry_uses_new_request_identity": true,
+    "approval_opens_private_viewer": true,
+    "h264_decodes_after_explicit_start": true,
+    "consecutive_segments_play": true,
+    "delay_drift_bounded": true,
+    "fill_selected": true,
+    "panel_does_not_shrink_video": true,
+    "escape_closes_panel_and_restores_focus": true,
+    "disconnect_is_explicit": true,
+    "network_recovers_at_current_delay": true,
+    "expired_response_was_exercised": true,
+    "expired_segment_recovers": true,
+    "new_source_epoch_recovers": true,
+    "hidden_page_stops_polling": true,
+    "visible_page_restarts_polling": true,
+    "no_uncaught_browser_errors": true
+  },
+  "browser_errors": []
+}

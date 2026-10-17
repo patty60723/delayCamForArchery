@@ -4,6 +4,8 @@
     <!-- spec 5.4 權限需求. minSdk is 29+, so scoped storage covers writing
          the app's own media via MediaStore with no storage permission. -->
     <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-feature android:name="android.hardware.camera.any" android:required="true" />
 
     <application
