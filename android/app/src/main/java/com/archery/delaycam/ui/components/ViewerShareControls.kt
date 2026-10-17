@@ -39,8 +39,12 @@ fun ViewerShareControls(viewModel: DelayCamViewModel) {
             modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
         Text("手機與電腦連同一個 Wi-Fi，或讓電腦連上這支手機的熱點。電腦用 Chrome／Edge 觀看，拍攝 App 需保持前景。",
             style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        state.notice?.let { Text(it, style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }) }
         state.error?.let { Text(it, color = MaterialTheme.colorScheme.error,
             modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }) }
+        Text("先開好 Wi-Fi／熱點，再開啟觀看。拍攝手機不要切到 LINE 等其他 App 傳連結；請讓對方直接輸入下方網址。重新開啟觀看後，網址會更新。",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (state.running) {
             state.requests.forEach { request ->
                 Surface(color = MaterialTheme.colorScheme.surface, shape = MaterialTheme.shapes.medium) {
@@ -59,13 +63,13 @@ fun ViewerShareControls(viewModel: DelayCamViewModel) {
                 }
             }
             if (link == null) {
-                Text("尚未找到區網位址。連上 Wi-Fi 或開啟熱點後，按「重新取得連結」。")
+                Text("尚未找到可用的 Wi-Fi／熱點位址；行動網路位址不能供對方連入。先開啟熱點或連上 Wi-Fi，再按「重新取得連結」。")
             } else {
                 Text("在電腦瀏覽器輸入", style = MaterialTheme.typography.titleSmall)
                 SelectionContainer {
                     Text(link.substringBefore("/v/") + "/", style = MaterialTheme.typography.headlineSmall)
                 }
-                Text("電腦按「向手機要求觀看」，核對兩邊代碼，再在這裡允許。返回練習後仍可從待確認提示進入。",
+                Text("請完整輸入 http:// 開頭的網址，再按「向手機要求觀看」。核對兩邊代碼後允許；返回練習後仍可從待確認提示進入。",
                     style = MaterialTheme.typography.bodyMedium)
                 TextButton(onClick = { advanced = !advanced }, modifier = Modifier.heightIn(min = 48.dp)
                     .semantics { stateDescription = if (advanced) "已展開" else "已收起" }) {

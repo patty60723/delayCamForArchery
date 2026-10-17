@@ -158,8 +158,7 @@ private fun AppNavHost(
             ReplayScreen(viewModel = viewModel, onOpenSavedClip = onOpenSaved)
         }
         composable(Routes.SETTINGS) {
-            SettingsScreen(viewModel = viewModel, onBack = { navController.popBackStack() },
-                onOpenViewer = { navController.navigate(Routes.VIEWER) { launchSingleTop = true } })
+            SettingsScreen(viewModel = viewModel, onBack = { navController.popBackStack() })
         }
         if (BuildConfig.LAN_VIEWER_TRIAL) composable(Routes.VIEWER) {
             ViewerScreen(viewModel, onBack = { navController.popBackStack() },

@@ -103,10 +103,12 @@ class LanViewerIntegrationTest {
             screenshot("lan-viewer-settings-entry")
             compose.onNodeWithText("開啟電腦觀看").assertDoesNotExist()
             compose.onNodeWithText("關閉觀看連線").assertDoesNotExist()
-            compose.onNodeWithText("多裝置觀看").performScrollTo().performClick()
+            compose.onNodeWithText("多裝置觀看").assertDoesNotExist()
+            androidx.test.espresso.Espresso.pressBack()
+            if (compose.onAllNodesWithContentDescription("收起操作").fetchSemanticsNodes().isEmpty())
+                compose.onNodeWithContentDescription("顯示操作").performClick()
+            compose.onNodeWithText("多裝置").performScrollTo().performClick()
             compose.onNodeWithText("觀看連線已開啟").assertIsDisplayed()
-            compose.onNodeWithContentDescription("返回上一頁").performClick()
-            compose.onNodeWithText("多裝置觀看").assertIsDisplayed().performClick()
             assertSame(server, field(vm, "viewerServer"))
             assertSame(encoder, field(vm, "segmentEncoder"))
             assertEquals(cameraSession, vm.cameraSessionForFrame())
@@ -150,6 +152,10 @@ class LanViewerIntegrationTest {
             assertSame(encoder, field(vm, "segmentEncoder"))
             assertEquals(cameraSession, vm.cameraSessionForFrame())
             assertTrue(request(server.port, "${path}status").first.startsWith("HTTP/1.1 200"))
+            scenario.onActivity { vm.refreshViewerLinks() }
+            compose.waitForIdle()
+            assertSame(server, field(vm, "viewerServer"))
+            assertEquals(token, server.token)
             val oldPort = server.port
             compose.onNodeWithText("關閉觀看連線").performScrollTo().performClick()
             assertFalse(vm.viewerShare.value.running)
@@ -162,6 +168,7 @@ class LanViewerIntegrationTest {
             val nextPort = next.port
             scenario.moveToState(Lifecycle.State.CREATED)
             compose.waitUntil(10_000) { !vm.viewerShare.value.running }
+            assertTrue(vm.viewerShare.value.notice?.contains("舊網址已失效") == true)
             assertTrue(runCatching { request(nextPort, "/v/${next.token}/status") }.isFailure)
             scenario.onActivity { vm.startViewerShare() }
             assertFalse(vm.viewerShare.value.running)

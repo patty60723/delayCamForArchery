@@ -33,7 +33,7 @@ class ViewerNavigationUiTest {
             if (landscape) Configuration.ORIENTATION_LANDSCAPE else Configuration.ORIENTATION_PORTRAIT }
     }
 
-    @Test fun portraitEntriesAndMissingAddressRecoveryShareOneWorkflow() {
+    @Test fun portraitPracticeEntryAndMissingAddressRecoveryShareOneWorkflow() {
         orientation(false)
         val owner = ViewModelStore()
         lateinit var vm: DelayCamViewModel
@@ -58,11 +58,14 @@ class ViewerNavigationUiTest {
             compose.onNodeWithContentDescription("多裝置 · 已開啟").assertIsDisplayed()
             compose.onNodeWithText("設定").performClick()
             compose.onNodeWithText("關閉觀看連線").assertDoesNotExist()
-            compose.onNodeWithText("多裝置觀看").performScrollTo().performClick()
+            compose.onNodeWithText("多裝置觀看").assertDoesNotExist()
+            androidx.test.espresso.Espresso.pressBack()
+            compose.onNodeWithText("多裝置").performClick()
             compose.onNodeWithText("觀看連線已開啟").assertIsDisplayed()
-            compose.onNodeWithContentDescription("返回上一頁").performClick()
-            compose.onNodeWithText("多裝置觀看").assertIsDisplayed()
             assertTrue(vm.viewerShare.value.running)
+            compose.runOnIdle { vm.onAppBackgrounded() }
+            compose.onNodeWithText("App 曾切到背景，觀看連線已關閉。請重新開啟，讓對方輸入畫面上的新網址；舊網址已失效。").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("開啟電腦觀看").performScrollTo().assertIsEnabled()
         } finally { compose.runOnUiThread { owner.clear() } }
     }
 

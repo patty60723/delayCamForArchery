@@ -95,7 +95,7 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
     private val _viewerShare = MutableStateFlow(ViewerShareState())
     val viewerShare = _viewerShare.asStateFlow()
     data class ViewerShareState(val running: Boolean = false, val busy: Boolean = false,
-        val links: List<String> = emptyList(), val error: String? = null,
+        val links: List<String> = emptyList(), val error: String? = null, val notice: String? = null,
         val requests: List<com.archery.delaycam.viewer.LanViewerServer.JoinRequest> = emptyList())
 
     fun startViewerShare() {
@@ -143,17 +143,15 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
             if (server === viewerServer) _viewerShare.value = _viewerShare.value.copy(links = links)
         }
     }
-    private fun viewerAddresses(): List<String> = runCatching { java.net.NetworkInterface.getNetworkInterfaces()
-        ?.toList().orEmpty().filter { it.isUp && !it.isLoopback &&
-            !it.name.startsWith("rmnet") && !it.name.startsWith("tun") }
-        .flatMap { it.inetAddresses.toList() }.filterIsInstance<java.net.Inet4Address>()
-        .filter { it.isSiteLocalAddress }.mapNotNull { it.hostAddress }.distinct() }.getOrDefault(emptyList())
+    private fun viewerAddresses(): List<String> = com.archery.delaycam.viewer.LanViewerNetwork.addresses(getApplication<Application>())
 
-    fun stopViewerShare() {
+    fun stopViewerShare() = closeViewerShare(null)
+
+    private fun closeViewerShare(notice: String?) {
         viewerGeneration++
         viewerServer?.close(); viewerServer = null
         viewerSource.reset()
-        _viewerShare.value = ViewerShareState()
+        _viewerShare.value = ViewerShareState(notice = notice)
     }
 
     private val _appState = MutableStateFlow(AppState.LIVE)
@@ -439,7 +437,9 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
 
     /** Called before CameraX stops receiving frames in Activity.onStop(). */
     fun onAppBackgrounded() {
-        stopViewerShare()
+        if (_viewerShare.value.running || _viewerShare.value.busy) {
+            closeViewerShare("App 曾切到背景，觀看連線已關閉。請重新開啟，讓對方輸入畫面上的新網址；舊網址已失效。")
+        }
         val endingSessionId = captureSession.sessionForFrame()
         if (!captureSession.endForeground()) return
         gestureEngine.setScene(GestureScene.DISABLED)

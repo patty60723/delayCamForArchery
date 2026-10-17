@@ -9,7 +9,7 @@
 | Toast | DelayCamNavHost / RecordingControls / SaveStatusNotice | 本文件 Feedback | 一般短提示；保存狀態持續顯示 | RecordingPlaybackUiTest |
 | CRUD | DelayCamViewModel / GalleryRepository / GalleryScreen / DeleteClipAction | 本文件 Playback、Gallery bulk actions | 單段確認；畫廊多選確認與部分失敗保留 | GalleryMultiSelectTest / ReplayReviewDeleteTest |
 | Selection | GallerySelection / GalleryScreen | 本文件 Gallery bulk actions | 長按或選取；全選／取消；URI 識別 | GallerySelectionTest / GalleryMultiSelectTest |
-| Viewer connection | ViewerScreen / ViewerShareControls / ViewerShareStatus / DelayCamViewModel | 本文件 Multi-device navigation | 獨立頁、練習浮動狀態及設定入口，共用同一 session | LanViewerIntegrationTest / ViewerNavigationUiTest |
+| Viewer connection | ViewerScreen / ViewerShareControls / ViewerShareStatus / DelayCamViewModel | 本文件 Multi-device navigation | 獨立頁與練習浮動狀態，共用同一 session | LanViewerIntegrationTest / ViewerNavigationUiTest |
 | Sharing | ClipSharing | 本文件 Gallery bulk actions | 單段／多段共用預檢、ClipData 與暫時讀取授權 | GalleryMultiSelectTest |
 | Recording | RecordingScreenLayout / RecordingControls | 本文件 Recording | 一般頂部列；橫向練習浮動 compact 版本，共用狀態與按鈕規則 | RecordingPlaybackUiTest / LivePracticeUiTest |
 | Capture format | AppSettings / SettingsRepository / CaptureAspectControl / FrameCanvas / VideoAspectNormalizer | 本文件 Capture format | 4:3／16:9；完整／滿版獨立 | CaptureSizeTest / VideoAspectExportTest / RotationContinuityTest |
@@ -143,8 +143,17 @@ DelayCamNavHost 依目前路由傳遞 RecordingControls.allowStart，僅 Routes.
 
 ## Multi-device navigation (0.3.1)
 
-依使用者確認的本次 IA review：Routes.VIEWER 僅出現在 LAN_VIEWER_TRIAL；練習及設定入口都導航到同一 ViewerScreen。一般返回回到來源頁，「返回練習」清除練習上方路由。切入此頁暫停練習手勢，但不停止相機、重建編碼器、重暖機或重啟 LAN server；離頁不撤銷連結。明確關閉或 App 背景仍依既有政策撤銷。
+依使用者確認的本次 IA review：Routes.VIEWER 僅出現在 LAN_VIEWER_TRIAL；依0.3.2使用者決定，僅練習入口導航到 ViewerScreen，設定不再提供捷徑。一般返回回到來源頁，「返回練習」清除練習上方路由。切入此頁暫停練習手勢，但不停止相機、重建編碼器、重暖機或重啟 LAN server；離頁不撤銷連結。明確關閉或 App 背景仍依既有政策撤銷。
 
 連線開啟與待確認由同一 viewerShare StateFlow 擁有。練習頁以 ViewerShareStatus 浮動顯示可點選狀態；待確認顯示數量，點入同一頁核對，允許／拒絕後數量同步。操作面板展開時由入口提供相同數量；不自動跳走、彈出模態或播放提示音。狀態只代表 server 可供觀看，不等同有裝置在線；不顯示無法量測的已連線台數。
 
 待確認先於網址與次要內容；短位址是主要連線方式，QR／完整連結／其他網路位址預設收合，沒有位址時仍提供重新取得連結。權限模型不變，QR 與完整連結包含本次觀看權限，必須明示；沒有永久記住裝置。啟動中禁用重送，錯誤持續顯示可重試。此頁不提供開始／繼續錄影；既有全域停止與保存回復仍可使用。
+
+
+## Hotspot addresses and expired links (0.3.2)
+
+使用者確認分享網址時曾切到通訊App，兩張截圖的port亦不同；這能確認曾重新開啟，不能單憑10.144位址斷言一定選到行動網路。每次重新開啟仍使用新ServerSocket與隨機token；舊網址失效，沒有改為背景分享或永久連結。重新取得連結只重新列出目前位址，不重建server或token。
+
+LanViewerNetwork 讀取 ConnectivityManager transport/interface 與 NetworkInterface，LanAddressPolicy 排除 cellular／VPN 已知介面與位址、rmnet及v4-rmnet等別名，優先熱點與已知LAN介面；保留可用的RFC1918 IPv4，包含合法的10開頭Wi-Fi，沒有候選就顯示無位址。ACCESS_NETWORK_STATE是普通權限，只供分類網路，不新增定位／附近裝置或熱點控制權限。未知OEM介面與真實熱點仍需實測。
+
+onAppBackgrounded關閉實際觀看連線後保留失效notice；再次開啟清除notice，busy／error及本機批准流程不變。設定的多裝置捷徑與對應導航callback刪除；練習入口仍可達。LanAddressPolicyTest驗證CLAT、vendor傳輸分類、有效10/8、優先順序及無LAN；原生導航／實際server測試驗證無設定入口、背景失效notice、refresh保持token與旋轉不中斷。
