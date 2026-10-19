@@ -25,11 +25,13 @@ fun LiveCameraPreview(
     modifier: Modifier = Modifier,
     showLabel: Boolean = true,
     aspectRatio: Float = 3f / 4f,
+    surfaceRouter: com.archery.delaycam.camera.PreviewSurfaceRouter? = null,
 ) {
     var host by remember { mutableStateOf<PreviewView?>(null) }
-    DisposableEffect(preview, host) {
-        host?.let { preview.surfaceProvider = it.surfaceProvider }
-        onDispose { preview.setSurfaceProvider(null) }
+    DisposableEffect(preview, host, surfaceRouter) {
+        val provider = host?.surfaceProvider
+        provider?.let { if (surfaceRouter != null) surfaceRouter.attach(preview, it) else preview.surfaceProvider = it }
+        onDispose { if (provider != null && surfaceRouter != null) surfaceRouter.detach(preview, provider) else if (surfaceRouter == null) preview.setSurfaceProvider(null) }
     }
     Column(modifier.width(if (visible) width else 1.dp)
         .graphicsLayer { alpha = if (visible) 1f else 0f }

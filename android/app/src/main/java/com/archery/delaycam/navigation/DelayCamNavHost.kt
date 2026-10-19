@@ -38,6 +38,8 @@ import com.archery.delaycam.ui.live.PracticeCameraLayout
 import androidx.compose.ui.geometry.Rect
 import com.archery.delaycam.ui.replay.ReplayScreen
 import com.archery.delaycam.ui.settings.SettingsScreen
+import com.archery.delaycam.ui.viewer.ViewerScreen
+import com.archery.delaycam.BuildConfig
 import java.net.URLDecoder
 
 /**
@@ -48,8 +50,11 @@ import java.net.URLDecoder
  * the web prototype's showScreen(REPLAY) calls in triggerSave().
  */
 @Composable
-fun DelayCamNavHost(viewModel: DelayCamViewModel) {
+fun DelayCamNavHost(viewModel: DelayCamViewModel, openViewerRequest: Int = 0) {
     val navController = rememberNavController()
+    LaunchedEffect(openViewerRequest) {
+        if (openViewerRequest > 0 && BuildConfig.LAN_VIEWER_TRIAL) navController.navigate(Routes.VIEWER) { launchSingleTop = true }
+    }
     val approval by viewModel.deleteApproval.collectAsState()
     val deleteLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) {
         viewModel.onDeleteApprovalResult(it.resultCode == Activity.RESULT_OK)
@@ -107,7 +112,7 @@ fun DelayCamNavHost(viewModel: DelayCamViewModel) {
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        PracticeCameraLayout(previewSource, live = route == Routes.LIVE) { previewBounds ->
+        PracticeCameraLayout(previewSource, live = route == Routes.LIVE, surfaceRouter = viewModel.previewSurfaceRouter) { previewBounds ->
         RecordingScreenLayout(
             practice = route == Routes.LIVE || route == Routes.REPLAY || route == Routes.PLAYER,
             recording = { compact, modifier ->
@@ -147,6 +152,7 @@ private fun AppNavHost(
                 viewModel = viewModel,
                 onOpenSettings = { navController.navigate(Routes.SETTINGS) },
                 onOpenGallery = { navController.navigate(Routes.GALLERY) },
+                onOpenViewer = { navController.navigate(Routes.VIEWER) { launchSingleTop = true } },
                 onOpenSavedClip = onOpenSaved,
                 onPreviewBounds = onPreviewBounds,
             )
@@ -156,6 +162,10 @@ private fun AppNavHost(
         }
         composable(Routes.SETTINGS) {
             SettingsScreen(viewModel = viewModel, onBack = { navController.popBackStack() })
+        }
+        if (BuildConfig.LAN_VIEWER_TRIAL) composable(Routes.VIEWER) {
+            ViewerScreen(viewModel, onBack = { navController.popBackStack() },
+                onReturnToPractice = { navController.popBackStack(Routes.LIVE, false) })
         }
         composable(Routes.GALLERY) {
             GalleryScreen(

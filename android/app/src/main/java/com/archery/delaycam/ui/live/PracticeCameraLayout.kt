@@ -15,6 +15,7 @@ import kotlin.math.roundToInt
 fun PracticeCameraLayout(
     preview: Preview,
     live: Boolean,
+    surfaceRouter: com.archery.delaycam.camera.PreviewSurfaceRouter? = null,
     content: @Composable ((Rect?) -> Unit) -> Unit,
 ) {
     var bounds by remember { mutableStateOf<Rect?>(null) }
@@ -28,6 +29,7 @@ fun PracticeCameraLayout(
             modifier = Modifier.offset { visibleBounds?.let {
                 IntOffset(it.left.roundToInt(), it.top.roundToInt())
             } ?: IntOffset.Zero }, showLabel = false,
-            aspectRatio = visibleBounds?.let { it.width / it.height } ?: 3f / 4f)
+            aspectRatio = visibleBounds?.let { it.width / it.height } ?: 3f / 4f,
+            surfaceRouter = surfaceRouter)
     }
 }

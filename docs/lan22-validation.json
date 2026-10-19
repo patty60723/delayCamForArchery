@@ -1,0 +1,28 @@
+{
+  "unit": {
+    "tests": 67,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "android16": {
+    "tests": 3,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "source_sha": "cc1517393d90c22405a6636541c6f1ba5505ecbf",
+  "run_id": 39239670279,
+  "apk_artifact_id": 12181011662,
+  "apk_sha256": "5ac91732c9147ffeeb0a5e8e8e21bb4e4d03e4a5f2db990feccf47a2457401bf",
+  "status": "all_jobs_success",
+  "android14": {
+    "tests": 58,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "browser_fixture_checks": 18,
+  "browser_android_capture_checks": 18,
+  "coexistence_test18": true
+}

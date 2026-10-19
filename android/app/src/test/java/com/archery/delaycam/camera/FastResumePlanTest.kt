@@ -46,4 +46,27 @@ class FastResumePlanTest {
             segment(16_000, 18_000)), 20_000, 5_000)!!
         assertEquals(900L, plan.positionMs)
     }
+
+    @Test fun backgroundReturnAcceptsCompletedLongerGopWithoutChangingNormalReplayPolicy() {
+        val long = listOf(segment(10_000,17_000),segment(17_000,19_000))
+        assertNull(FastResumePlan.create(long,20_000,6_000))
+        val plan = FastResumePlan.create(long,20_000,6_000,FastResumePlan.BACKGROUND_MAX_SEGMENT_MS)!!
+        assertEquals(4_000L,plan.positionMs)
+        assertEquals(15_000L,plan.maxSegmentMs)
+        assertEquals(long,plan.segments)
+    }
+
+    @Test fun longerBackgroundGopStillRejectsInvalidTimingAndUnboundedDuration() {
+        val badClock = listOf(segment(10_000,17_000).copy(mediaDurationMs=1_000),segment(17_000,19_000))
+        assertNull(FastResumePlan.create(badClock,20_000,6_000,15_000))
+        assertNull(FastResumePlan.create(listOf(segment(0,20_000)),21_000,6_000,15_000))
+        assertNull(FastResumePlan.create(listOf(segment(10_000,17_000),segment(17_500,19_000)),20_000,6_000,15_000))
+    }
+
+    @Test fun acceptingLongerGopDoesNotAllowStaleOrUnfinishedBackgroundTargets() {
+        val long = listOf(segment(10_000,17_000),segment(17_000,19_000))
+        assertNull(FastResumePlan.create(long,26_000,12_000,15_000))
+        assertNull(FastResumePlan.create(long,21_000,1_000,15_000))
+    }
+
 }

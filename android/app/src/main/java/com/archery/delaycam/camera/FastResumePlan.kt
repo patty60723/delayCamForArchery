@@ -3,24 +3,25 @@ package com.archery.delaycam.camera
 import kotlin.math.abs
 
 /** Select current source time, never the playback position paused before replay. */
-data class FastResumePlan(val segments: List<SegmentInfo>, val positionMs: Long) {
+data class FastResumePlan(val segments: List<SegmentInfo>, val positionMs: Long, val maxSegmentMs: Long = MAX_SEGMENT_MS) {
     companion object {
         const val MAX_GAP_MS = 150L
         const val MAX_SEGMENT_MS = 5_000L
+        const val BACKGROUND_MAX_SEGMENT_MS = 15_000L
 
-        fun valid(segment: SegmentInfo): Boolean {
+        fun valid(segment: SegmentInfo, maxSegmentMs: Long = MAX_SEGMENT_MS): Boolean {
             val duration = segment.endedAtMs - segment.startedAtMs
-            return duration in 100L..MAX_SEGMENT_MS &&
+            return duration in 100L..maxSegmentMs &&
                 abs(duration - segment.mediaDurationMs) <= 500L
         }
 
-        fun create(segments: List<SegmentInfo>, nowMs: Long, delayMs: Long): FastResumePlan? {
-            if (delayMs <= 0 || segments.isEmpty()) return null
+        fun create(segments: List<SegmentInfo>, nowMs: Long, delayMs: Long, maxSegmentMs: Long = MAX_SEGMENT_MS): FastResumePlan? {
+            if (delayMs <= 0 || segments.isEmpty() || maxSegmentMs !in MAX_SEGMENT_MS..BACKGROUND_MAX_SEGMENT_MS) return null
             val target = nowMs - delayMs
             val first = segments.indexOfFirst { target >= it.startedAtMs && target < it.endedAtMs }
             if (first < 0) return null
             val selected = segments.drop(first)
-            if (selected.any { !valid(it) } || selected.map { it.file }.distinct().size != selected.size) return null
+            if (selected.any { !valid(it, maxSegmentMs) } || selected.map { it.file }.distinct().size != selected.size) return null
             if (selected.zipWithNext().any { (a, b) ->
                     b.startedAtMs < a.endedAtMs || b.startedAtMs - a.endedAtMs > MAX_GAP_MS
                 }) return null
@@ -30,7 +31,7 @@ data class FastResumePlan(val segments: List<SegmentInfo>, val positionMs: Long)
             val source = selected.first()
             val position = ((target - source.startedAtMs) * source.mediaDurationMs /
                 (source.endedAtMs - source.startedAtMs)).coerceAtLeast(0)
-            return FastResumePlan(selected, position)
+            return FastResumePlan(selected, position, maxSegmentMs)
         }
     }
 }

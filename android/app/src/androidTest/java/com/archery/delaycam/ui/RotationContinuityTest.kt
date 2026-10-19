@@ -56,7 +56,7 @@ class RotationContinuityTest {
                     // fullSensor intentionally ignores the OS user-rotation lock.
                     // Request the test orientation on the Activity itself.
                     it.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-                    vm = ViewModelProvider(it)[DelayCamViewModel::class.java]
+                    vm = it.sessionModel
                     vm.livePlayer.setVideoFrameMetadataListener { _, _, _, _ -> renderedFrames.incrementAndGet() }
                 }
                 compose.waitUntil(10_000) {
@@ -77,7 +77,7 @@ class RotationContinuityTest {
                 assertEquals(CaptureAspect.SIXTEEN_NINE, vm.cameraSourceStatus.value.source)
                 scenario.onActivity {
                     assertSame(sourceHost, it.window.decorView.findViewWithTag<PreviewView>("live-camera-preview-host"))
-                    val size = (field(it, "imageAnalysis") as ImageAnalysis).resolutionInfo!!.resolution
+                    val size = (field((it.application as com.archery.delaycam.DelayCamApp).camera, "imageAnalysis") as ImageAnalysis).resolutionInfo!!.resolution
                     assertEquals(16f / 9f, size.width.toFloat() / size.height, .001f)
                 }
                 compose.onNodeWithText("滿版").performScrollTo().performClick().assertIsSelected()
@@ -132,17 +132,17 @@ class RotationContinuityTest {
                                 ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE -> Surface.ROTATION_270
                                 else -> Surface.ROTATION_0
                             } &&
-                            (field(activity, "imageAnalysis") as? ImageAnalysis)?.targetRotation ==
+                            (field((activity.application as com.archery.delaycam.DelayCamApp).camera, "imageAnalysis") as? ImageAnalysis)?.targetRotation ==
                             physicalRotation()
                     } } catch (failure: Throwable) {
                         throw AssertionError("rotation requested=$orientation physical=${physicalRotation()} " +
                             "window=${activity.window.decorView.display.rotation} " +
-                            "analysis=${(field(activity, "imageAnalysis") as? ImageAnalysis)?.targetRotation}", failure)
+                            "analysis=${(field((activity.application as com.archery.delaycam.DelayCamApp).camera, "imageAnalysis") as? ImageAnalysis)?.targetRotation}", failure)
                     }
                     compose.waitForIdle()
                     scenario.onActivity {
                         assertSame("Rotation must not recreate MainActivity", activity, it)
-                        assertSame(vm, ViewModelProvider(it)[DelayCamViewModel::class.java])
+                        assertSame(vm, it.sessionModel)
                         assertSame(preview, it.window.decorView.findViewWithTag<PreviewView>("live-camera-preview-host"))
                         assertEquals(session, vm.cameraSessionForFrame())
                         assertEquals("Rotation must not clear delay history", generation, field(vm, "bufferGeneration"))

@@ -69,6 +69,7 @@ class ReplayReviewDeleteTest {
         try {
             android.util.Log.i("ReplayDeleteTest", "Starting shot save")
             compose.runOnIdle {
+                DelayCamViewModel::class.java.getDeclaredField("uiForeground").apply { isAccessible = true }.set(vm, true)
                 val capture = field(vm, "captureSession") as ForegroundCaptureSession
                 capture.beginForeground()?.let { capture.markReady(it) }
                 DelayCamViewModel::class.java.getDeclaredField("immutableStore").apply { isAccessible = true }.set(vm, store)

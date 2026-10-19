@@ -9,6 +9,7 @@
 | Toast | DelayCamNavHost / RecordingControls / SaveStatusNotice | 本文件 Feedback | 一般短提示；保存狀態持續顯示 | RecordingPlaybackUiTest |
 | CRUD | DelayCamViewModel / GalleryRepository / GalleryScreen / DeleteClipAction | 本文件 Playback、Gallery bulk actions | 單段確認；畫廊多選確認與部分失敗保留 | GalleryMultiSelectTest / ReplayReviewDeleteTest |
 | Selection | GallerySelection / GalleryScreen | 本文件 Gallery bulk actions | 長按或選取；全選／取消；URI 識別 | GallerySelectionTest / GalleryMultiSelectTest |
+| Viewer connection | ViewerScreen / ViewerShareControls / ViewerShareStatus / DelayCamViewModel | 本文件 Multi-device navigation | 獨立頁與練習浮動狀態，共用同一 session | LanViewerIntegrationTest / ViewerNavigationUiTest |
 | Sharing | ClipSharing | 本文件 Gallery bulk actions | 單段／多段共用預檢、ClipData 與暫時讀取授權 | GalleryMultiSelectTest |
 | Recording | RecordingScreenLayout / RecordingControls | 本文件 Recording | 一般頂部列；橫向練習浮動 compact 版本，共用狀態與按鈕規則 | RecordingPlaybackUiTest / LivePracticeUiTest |
 | Capture format | AppSettings / SettingsRepository / CaptureAspectControl / FrameCanvas / VideoAspectNormalizer | 本文件 Capture format | 4:3／16:9；完整／滿版獨立 | CaptureSizeTest / VideoAspectExportTest / RotationContinuityTest |
@@ -119,3 +120,64 @@ Canonical owners: GalleryScreen owns presentation and confirmation; GallerySelec
 ## Recording entry scope (0.2.14)
 
 DelayCamNavHost 依目前路由傳遞 RecordingControls.allowStart，僅 Routes.LIVE 為 true。RecordingControls 擁有同一錄影狀態與非練習頁變體；不在 GalleryScreen 額外隱藏或重做錄影列。沒有錄影／保存內容時不佔頂部高度，RecordingScreenLayout 的唯一導航 composition 位置不變。GalleryRecordingEntryTest 驗證真實導航練習→畫廊→返回→設定，並以共用元件驗證錄影停止、忙碌禁用與保存進度／成功／重試，確保沒有開始／繼續入口。
+
+
+## LAN viewer trial (0.3.0)
+
+| Capability | Canonical owner | Source of truth | Allowed variants | Verification |
+| --- | --- | --- | --- | --- |
+| Viewer session | DelayCamViewModel / LanViewerServer | 本節 | 手動開啟／關閉；背景撤銷；192-bit 本次觀看連結 | LanViewerServerTest / LanViewerIntegrationTest |
+| Viewer media | ViewerSegmentSource / ImmutableSegmentStore | 本節 | 已完成片段、獨立讀取 lease、GET/HEAD/Range | LanViewerServerTest / 實際相機 HTTP 與 Chromium 解碼 |
+| Browser playback | viewer.js | 本節與 DESIGN.md | 開始、FIT/FILL、接回目前延遲；只讀 | scripts/test-lan-viewer.py |
+
+只有 LAN_VIEWER_TRIAL 版本提供手動觀看連線；預設不開 server，拍攝與錄影仍由原本單一相機／編碼器擁有。開始前說明僅自己的 Wi-Fi／熱點、只讀觀看、影片保存在拍攝手機。連線網址含本次隨機 token；本輪不記住永久裝置，不自動重放控制指令，沒有遠端保存／錄影或檔案庫讀取路由。HTTP 本機明文，不用公開或不可信網路，不開外網服務。以明確 App 開啟／關閉入口控制觀看權限。
+
+背景、停止分享及 ViewModel 結束關閉 sockets 與撤銷 token；旋轉沿同一 server／相機工作階段。需要重新開啟時產生新連結；舊連結不能讀取新工作階段。metadata 不包含檔案路徑，影片讀取先取得不可覆寫 lease，過期片段為410。提供單一 Range／HEAD，拒絕任意路徑、寫入及跨來源請求。
+
+瀏覽器選同一來源目標時間（拍攝時間減 delaySec），不再加第二次延遲。網路與片段交接可能增加等待；累積落後過多時接回目前目標，不播放全部積壓歷史。載入後確實解碼首畫格才換掉保留畫面；中斷會標示最後畫面。輪詢在分頁隱藏停止、回前景恢復，epoch／delay 改變重新建立觀看。操作面板 Escape 還原按鈕焦點；不干擾拍攝端手勢與本機錄影。
+
+本輪驗收以電腦 Chrome／Edge 為目標，Chromium 自動測試；真實 Pixel→電腦 Wi-Fi／熱點由使用者試裝驗收。不能以 localhost 或模擬器測試宣稱已完成實際無線連線、Safari 相容性、永久配對或遠端控制。
+
+電腦首次授權由 LanViewerServer 的 JoinRequest 與 ViewerShareControls 擁有：電腦輸入短位址，POST 隨機192-bit要求ID、顯示六位核對代碼；手機只在本機允許／拒絕。未批准前輪詢不回傳觀看 token，允許後才導向本次觀看頁。要求重送按同ID冪等，最多四個待確認／24個短期項目，新要求清除三分鐘前項目；停止連線使全部失效。不存在遠端授權／相機控制路由。LanViewerServerTest、LanViewerIntegrationTest 與瀏覽器測試涵蓋拒絕、重試、核對、允許前無媒體與允許後觀看。
+
+
+## Multi-device navigation (0.3.1)
+
+依使用者確認的本次 IA review：Routes.VIEWER 僅出現在 LAN_VIEWER_TRIAL；依0.3.2使用者決定，僅練習入口導航到 ViewerScreen，設定不再提供捷徑。一般返回回到來源頁，「返回練習」清除練習上方路由。切入此頁暫停練習手勢，但不停止相機、重建編碼器、重暖機或重啟 LAN server；離頁不撤銷連結。明確關閉或 App 背景仍依既有政策撤銷。
+
+連線開啟與待確認由同一 viewerShare StateFlow 擁有。練習頁以 ViewerShareStatus 浮動顯示可點選狀態；待確認顯示數量，點入同一頁核對，允許／拒絕後數量同步。操作面板展開時由入口提供相同數量；不自動跳走、彈出模態或播放提示音。狀態只代表 server 可供觀看，不等同有裝置在線；不顯示無法量測的已連線台數。
+
+待確認先於網址與次要內容；短位址是主要連線方式，QR／完整連結／其他網路位址預設收合，沒有位址時仍提供重新取得連結。權限模型不變，QR 與完整連結包含本次觀看權限，必須明示；沒有永久記住裝置。啟動中禁用重送，錯誤持續顯示可重試。此頁不提供開始／繼續錄影；既有全域停止與保存回復仍可使用。
+
+
+## Hotspot addresses and expired links (0.3.2)
+
+使用者確認分享網址時曾切到通訊App，兩張截圖的port亦不同；這能確認曾重新開啟，不能單憑10.144位址斷言一定選到行動網路。每次重新開啟仍使用新ServerSocket與隨機token；舊網址失效，沒有改為背景分享或永久連結。重新取得連結只重新列出目前位址，不重建server或token。
+
+LanViewerNetwork 讀取 ConnectivityManager transport/interface 與 NetworkInterface，LanAddressPolicy 排除 cellular／VPN 已知介面與位址、rmnet及v4-rmnet等別名，優先熱點與已知LAN介面；保留可用的RFC1918 IPv4，包含合法的10開頭Wi-Fi，沒有候選就顯示無位址。ACCESS_NETWORK_STATE是普通權限，只供分類網路，不新增定位／附近裝置或熱點控制權限。未知OEM介面與真實熱點仍需實測。
+
+onAppBackgrounded關閉實際觀看連線後保留失效notice；再次開啟清除notice，busy／error及本機批准流程不變。設定的多裝置捷徑與對應導航callback刪除；練習入口仍可達。LanAddressPolicyTest驗證CLAT、vendor傳輸分類、有效10/8、優先順序及無LAN；原生導航／實際server測試驗證無設定入口、背景失效notice、refresh保持token與旋轉不中斷。
+
+
+## Background sharing (0.4.0, supersedes 0.3.x)
+
+來源：使用者2026-10-19同意「開啟分享後可切換App、連結有效、返回不重新暖機、常駐通知有停止入口」。保留既有只讀批准與本次token模型，不開放遠端控制；背景持續拍攝僅由明確開始多裝置分享啟用，不推廣到一般單機練習。
+
+| Capability | Canonical owner | Source of truth | Allowed variants | Verification |
+| --- | --- | --- | --- | --- |
+| Background camera | DelayCamApp / CameraCaptureController / ViewerForegroundService | 本節 | 可見Activity或已提升camera FGS，非分享維持離開停止 | ViewerBackgroundSharingTest / RotationContinuityTest |
+| Preview surface | PreviewSurfaceRouter / LiveCameraPreview | 本節 | 前景PreviewView，背景排空ImageReader | 實際背景MP4持續與Activity重建 |
+| Background notice | ViewerForegroundService / ViewerShareControls | 本節 | 相機通知、待確認、停止、通知封鎖後App入口 | ViewerBackgroundSharingTest |
+
+啟動順序：前景使用者操作 → busy與generation → startForegroundService → camera型別startForeground成功 → 開啟HTTP並發布網址。未成功提升服務時不承諾背景；快速離開、超時、權限／啟動失敗或晚到的舊generation回呼不得留下可用舊網址或孤兒服務。通知不含觀看token，服務不export，不由開機或背景自動建立拍攝模型，START_NOT_STICKY不重啟。
+
+切背景時保留同一captureSession／MediaCodec／server／token，持續發布新MP4與錄影，停用手勢和回放自動返回；隱藏的本機延遲播放器釋放片段讀取lease，不累積不可修剪的佇列。回到實際練習路由才從保留緩衝接回目前延遲；通知進連線頁不因沒有影片Surface而誤判播放器停滯並清空相機緩衝。真正缺段或解碼失敗仍沿用安全退回準備。
+
+相機生命週期與Activity分離；切換App、一般旋轉、Activity重建不得重綁相機或清掉拍攝／分享session。返回通知走同一ViewerScreen，不建立另一套批准介面。待確認在通知只顯示數量，核對代碼與允許／拒絕仍在App完成。
+
+停止分享：立即撤銷server/token與停止前景通知；Activity可見時維持普通練習，相機在背景時結束本次拍攝並保存整段錄影。滑掉App或服務被系統終止時也撤銷，不自動恢復分享。程序遭強制終止不承諾連結／錄影可復原。最後Activity不存在且無服務時，等待進行中的保存完成再清理ViewModelStore、CameraX、編碼器、播放器與wake lock。
+
+Android 13+通知權限可在首次開始時請求；拒絕不作為FGS啟動的必要條件，App提供持續說明及停止入口。前景服務與相機類型、wake lock是普通manifest權限；既有相機權限仍必要，不新增麥克風、位置、雲端傳輸或永久配對。
+
+
+背景返回的片段驗證（0.4.0）：系統忙碌或Preview Surface交接可能產生超過5秒但時間與媒體長度一致的完整GOP。僅背景返回使用上限15秒的明確變體，並將上限傳給後續播放佇列；一般回放仍維持5秒上限。重複檔名、重疊、超過150ms的間隙、媒體與來源時鐘差超過500ms、來源過舊或目標尚未完成仍不接受。背景目標尚未可用時先保留來源緩衝、顯示等待首畫格並於新片段到達重試；可見練習頁等待15秒仍無可用資料才安全退回準備，不因剛超過5秒就清掉相機歷史。通知可見性同時檢查App通知與分享通知頻道；測試用確實生效的頻道封鎖，不用無效的AppOps假定通知已禁用。
