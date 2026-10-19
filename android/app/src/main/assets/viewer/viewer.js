@@ -117,7 +117,7 @@ async function poll() {
     state.nowMs += (receivedAt - requestedAt) / 2;
     document.querySelector('#timing').textContent = `拍攝端延遲設定 ${state.delaySec} 秒；傳輸與片段交接可能增加等待。`;
     if (!state.active) {
-      reset(); say('拍攝端已暫停'); if (running) message('請將拍攝手機的 App 回到前景，並重新開啟觀看連線。'); return;
+      reset(); say('拍攝端已暫停'); if (running) message('請在拍攝手機確認分享狀態；若服務已停止，請重新開啟並使用新連結。'); return;
     }
     if (running) {
       scalePicture(); advance();

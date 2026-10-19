@@ -903,6 +903,7 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
         if (tryFastReturn(FastResumePlan.BACKGROUND_MAX_SEGMENT_MS)) {
             backgroundResumeUntil = null
         } else {
+            fastResumeDeadlineMs = null
             // A healthy encoder may be finishing a longer GOP after a surface handoff.
             // Keep its history; retry when the completed target arrives instead of discarding it.
             liveHasRenderedFrame = false
