@@ -112,6 +112,7 @@ class FastReturnPlaybackTest {
 
     @Suppress("UNCHECKED_CAST")
     private fun seedReplay(vm: DelayCamViewModel, store: ImmutableSegmentStore) {
+        set(vm, "uiForeground", true)
         val capture = field(vm, "captureSession") as ForegroundCaptureSession
         capture.beginForeground()?.let { capture.markReady(it) }
         set(vm, "immutableStore", store)

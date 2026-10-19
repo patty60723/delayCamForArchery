@@ -10,6 +10,14 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
+import androidx.core.app.NotificationManagerCompat
+import android.Manifest
+import android.os.Build
+import android.content.pm.PackageManager
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
@@ -24,6 +32,16 @@ import kotlinx.coroutines.withContext
 fun ViewerShareControls(viewModel: DelayCamViewModel) {
     val state by viewModel.viewerShare.collectAsState()
     val clipboard = LocalClipboardManager.current
+    val context = LocalContext.current
+    val app = context.applicationContext as com.archery.delaycam.DelayCamApp
+    val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { viewModel.startViewerShare() }
+    val startSharing = {
+        if (Build.VERSION.SDK_INT >= 33 && !app.notificationPermissionAsked &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            app.notificationPermissionAsked = true
+            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else viewModel.startViewerShare()
+    }
     var selectedLink by remember { mutableStateOf<String?>(null) }
     var copied by remember { mutableStateOf(false) }
     var advanced by rememberSaveable { mutableStateOf(false) }
@@ -37,14 +55,17 @@ fun ViewerShareControls(viewModel: DelayCamViewModel) {
             else -> "尚未開啟觀看連線"
         }, style = MaterialTheme.typography.titleSmall,
             modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
-        Text("手機與電腦連同一個 Wi-Fi，或讓電腦連上這支手機的熱點。電腦用 Chrome／Edge 觀看，拍攝 App 需保持前景。",
+        Text("手機與電腦連同一個 Wi-Fi，或讓電腦連上這支手機的熱點。電腦用 Chrome／Edge 觀看。開啟後可切到 LINE 或其他 App，拍攝與連結會繼續。",
             style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         state.notice?.let { Text(it, style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }) }
         state.error?.let { Text(it, color = MaterialTheme.colorScheme.error,
             modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }) }
-        Text("先開好 Wi-Fi／熱點，再開啟觀看。拍攝手機不要切到 LINE 等其他 App 傳連結；請讓對方直接輸入下方網址。重新開啟觀看後，網址會更新。",
+        Text("先開好 Wi-Fi／熱點，再開啟觀看。背景會繼續拍攝與整段錄影，通知會顯示分享狀態；背景停止分享時，錄影會結束並保存。",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (state.running && !NotificationManagerCompat.from(context).areNotificationsEnabled()) {
+            Text("通知權限未開啟，分享仍會繼續；請回到此頁停止，或使用 Android 的執行中應用程式控制。", style = MaterialTheme.typography.bodySmall)
+        }
         if (state.running) {
             state.requests.forEach { request ->
                 Surface(color = MaterialTheme.colorScheme.surface, shape = MaterialTheme.shapes.medium) {
@@ -86,7 +107,7 @@ fun ViewerShareControls(viewModel: DelayCamViewModel) {
                             }
                         }
                     }
-                    Text("下方 QR Code 與完整連結可直接觀看，只提供給自己的裝置。切換到其他手機 App 會結束本次連線。",
+                    Text("下方 QR Code 與完整連結可直接觀看，只提供給自己的裝置。可以切到通訊 App 傳送；主動停止分享後，本次連結才會失效。",
                         style = MaterialTheme.typography.bodySmall)
                     val qr by produceState<Bitmap?>(null, link) {
                         value = withContext(Dispatchers.Default) {
@@ -110,13 +131,13 @@ fun ViewerShareControls(viewModel: DelayCamViewModel) {
                 }
             }
             TextButton(onClick = viewModel::refreshViewerLinks, modifier = Modifier.heightIn(min = 48.dp)) { Text("重新取得連結") }
-            Text("返回練習會繼續分享；關閉觀看連線或把 App 切到背景，本次連結就會失效。",
+            Text("返回練習、切換 App 或回桌面都會繼續分享。可在這裡或通知停止；滑掉 App、系統結束服務或主動停止後，本次連結會失效。",
                 style = MaterialTheme.typography.bodySmall)
             Text("只供觀看，尚未記住裝置。請使用自己的 Wi-Fi 或熱點；片段切換可能短暫停頓。",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             OutlinedButton(onClick = viewModel::stopViewerShare, modifier = Modifier.heightIn(min = 48.dp)) { Text("關閉觀看連線") }
         } else {
-            Button(onClick = viewModel::startViewerShare, enabled = !state.busy,
+            Button(onClick = startSharing, enabled = !state.busy,
                 modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
                 Text(if (state.busy) "正在開啟…" else "開啟電腦觀看")
             }

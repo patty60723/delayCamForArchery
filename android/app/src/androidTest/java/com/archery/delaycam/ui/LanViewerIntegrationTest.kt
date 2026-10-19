@@ -49,14 +49,15 @@ class LanViewerIntegrationTest {
         resolver.openOutputStream(image)!!.use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
     }
 
-    @Test(timeout = 150_000) fun cameraShareSurvivesRotationAndRevokesOnStopOrBackground() {
+    @Test(timeout = 150_000) fun cameraShareSurvivesRotationAndBackgroundUntilExplicitStop() {
         assertTrue(BuildConfig.LAN_VIEWER_TRIAL)
         instrumentation.uiAutomation.grantRuntimePermission(instrumentation.targetContext.packageName, Manifest.permission.CAMERA)
+        if (android.os.Build.VERSION.SDK_INT >= 33) instrumentation.uiAutomation.grantRuntimePermission(instrumentation.targetContext.packageName, Manifest.permission.POST_NOTIFICATIONS)
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             lateinit var vm: DelayCamViewModel
             lateinit var activity: MainActivity
             scenario.onActivity { activity = it; it.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-                vm = ViewModelProvider(it)[DelayCamViewModel::class.java] }
+                vm = it.sessionModel }
             compose.waitUntil(45_000) { vm.warmupRemainingSec.value == null && vm.cameraSessionForFrame() != null }
             val cameraSession = vm.cameraSessionForFrame()
             val encoder = field(vm, "segmentEncoder")
@@ -166,10 +167,25 @@ class LanViewerIntegrationTest {
             assertNotEquals(token, next.token)
             assertTrue(request(next.port, "${path}status").first.startsWith("HTTP/1.1 404"))
             val nextPort = next.port
+            val beforeBackground = JSONObject(request(nextPort, "/v/${next.token}/status").second.toString(Charsets.UTF_8))
+                .getJSONArray("segments").let { it.getJSONObject(it.length()-1).getLong("id") }
             scenario.moveToState(Lifecycle.State.CREATED)
-            compose.waitUntil(10_000) { !vm.viewerShare.value.running }
-            assertTrue(vm.viewerShare.value.notice?.contains("舊網址已失效") == true)
+            assertTrue(vm.viewerShare.value.running)
+            assertTrue(vm.sharingServiceActive)
+            assertSame(encoder, field(vm, "segmentEncoder"))
+            assertEquals(cameraSession, vm.cameraSessionForFrame())
+            compose.waitUntil(30_000) {
+                val current = JSONObject(request(nextPort, "/v/${next.token}/status").second.toString(Charsets.UTF_8)).getJSONArray("segments")
+                current.getJSONObject(current.length()-1).getLong("id") > beforeBackground
+            }
+            scenario.moveToState(Lifecycle.State.RESUMED)
+            assertSame(next, field(vm, "viewerServer"))
+            assertTrue(vm.viewerShare.value.running)
+            scenario.onActivity { vm.stopViewerShare() }
+            compose.waitUntil(10_000) { !vm.sharingServiceActive }
             assertTrue(runCatching { request(nextPort, "/v/${next.token}/status") }.isFailure)
+            scenario.moveToState(Lifecycle.State.CREATED)
+            assertNull(vm.cameraSessionForFrame())
             scenario.onActivity { vm.startViewerShare() }
             assertFalse(vm.viewerShare.value.running)
         }

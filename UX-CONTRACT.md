@@ -157,3 +157,24 @@ DelayCamNavHost 依目前路由傳遞 RecordingControls.allowStart，僅 Routes.
 LanViewerNetwork 讀取 ConnectivityManager transport/interface 與 NetworkInterface，LanAddressPolicy 排除 cellular／VPN 已知介面與位址、rmnet及v4-rmnet等別名，優先熱點與已知LAN介面；保留可用的RFC1918 IPv4，包含合法的10開頭Wi-Fi，沒有候選就顯示無位址。ACCESS_NETWORK_STATE是普通權限，只供分類網路，不新增定位／附近裝置或熱點控制權限。未知OEM介面與真實熱點仍需實測。
 
 onAppBackgrounded關閉實際觀看連線後保留失效notice；再次開啟清除notice，busy／error及本機批准流程不變。設定的多裝置捷徑與對應導航callback刪除；練習入口仍可達。LanAddressPolicyTest驗證CLAT、vendor傳輸分類、有效10/8、優先順序及無LAN；原生導航／實際server測試驗證無設定入口、背景失效notice、refresh保持token與旋轉不中斷。
+
+
+## Background sharing (0.4.0, supersedes 0.3.x)
+
+來源：使用者2026-10-19同意「開啟分享後可切換App、連結有效、返回不重新暖機、常駐通知有停止入口」。保留既有只讀批准與本次token模型，不開放遠端控制；背景持續拍攝僅由明確開始多裝置分享啟用，不推廣到一般單機練習。
+
+| Capability | Canonical owner | Source of truth | Allowed variants | Verification |
+| --- | --- | --- | --- | --- |
+| Background camera | DelayCamApp / CameraCaptureController / ViewerForegroundService | 本節 | 可見Activity或已提升camera FGS，非分享維持離開停止 | ViewerBackgroundSharingTest / RotationContinuityTest |
+| Preview surface | PreviewSurfaceRouter / LiveCameraPreview | 本節 | 前景PreviewView，背景排空ImageReader | 實際背景MP4持續與Activity重建 |
+| Background notice | ViewerForegroundService / ViewerShareControls | 本節 | 相機通知、待確認、停止、通知封鎖後App入口 | ViewerBackgroundSharingTest |
+
+啟動順序：前景使用者操作 → busy與generation → startForegroundService → camera型別startForeground成功 → 開啟HTTP並發布網址。未成功提升服務時不承諾背景；快速離開、超時、權限／啟動失敗或晚到的舊generation回呼不得留下可用舊網址或孤兒服務。通知不含觀看token，服務不export，不由開機或背景自動建立拍攝模型，START_NOT_STICKY不重啟。
+
+切背景時保留同一captureSession／MediaCodec／server／token，持續發布新MP4與錄影，停用手勢和回放自動返回；隱藏的本機延遲播放器釋放片段讀取lease，不累積不可修剪的佇列。回到實際練習路由才從保留緩衝接回目前延遲；通知進連線頁不因沒有影片Surface而誤判播放器停滯並清空相機緩衝。真正缺段或解碼失敗仍沿用安全退回準備。
+
+相機生命週期與Activity分離；切換App、一般旋轉、Activity重建不得重綁相機或清掉拍攝／分享session。返回通知走同一ViewerScreen，不建立另一套批准介面。待確認在通知只顯示數量，核對代碼與允許／拒絕仍在App完成。
+
+停止分享：立即撤銷server/token與停止前景通知；Activity可見時維持普通練習，相機在背景時結束本次拍攝並保存整段錄影。滑掉App或服務被系統終止時也撤銷，不自動恢復分享。程序遭強制終止不承諾連結／錄影可復原。最後Activity不存在且無服務時，等待進行中的保存完成再清理ViewModelStore、CameraX、編碼器、播放器與wake lock。
+
+Android 13+通知權限可在首次開始時請求；拒絕不作為FGS啟動的必要條件，App提供持續說明及停止入口。前景服務與相機類型、wake lock是普通manifest權限；既有相機權限仍必要，不新增麥克風、位置、雲端傳輸或永久配對。

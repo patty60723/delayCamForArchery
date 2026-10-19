@@ -64,7 +64,7 @@ class ViewerNavigationUiTest {
             compose.onNodeWithText("觀看連線已開啟").assertIsDisplayed()
             assertTrue(vm.viewerShare.value.running)
             compose.runOnIdle { vm.onAppBackgrounded() }
-            compose.onNodeWithText("App 曾切到背景，觀看連線已關閉。請重新開啟，讓對方輸入畫面上的新網址；舊網址已失效。").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("背景分享尚未啟動，連線已關閉，請回到 App 重試。").performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("開啟電腦觀看").performScrollTo().assertIsEnabled()
         } finally { compose.runOnUiThread { owner.clear() } }
     }

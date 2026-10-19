@@ -2,7 +2,8 @@ package com.archery.delaycam.camera
 
 /**
  * Coordinates Activity lifecycle calls with the camera analysis executor.
- * Every foreground session has a new identity; old frames, startup tasks,
+ * "Foreground" means an active capture owner: a visible Activity or a user-started camera FGS.
+ * Every new capture session has a new identity; old frames, startup tasks,
  * and finalized-segment callbacks cannot activate or populate a new session.
  */
 class ForegroundCaptureSession {

@@ -98,8 +98,30 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
         val links: List<String> = emptyList(), val error: String? = null, val notice: String? = null,
         val requests: List<com.archery.delaycam.viewer.LanViewerServer.JoinRequest> = emptyList())
 
+    private var uiForeground = false
+    private var sharingService: com.archery.delaycam.service.ViewerForegroundService? = null
+    private var sharingReady: CompletableDeferred<Boolean>? = null
+    private var backgroundPlaybackSuspended = false
+    val sharingServiceActive: Boolean get() = sharingService != null
+    fun canStartSharingService(generation: Long): Boolean = BuildConfig.LAN_VIEWER_TRIAL && uiForeground &&
+        generation == viewerGeneration && (_viewerShare.value.busy || _viewerShare.value.running)
+    fun sharingServiceStarted(service: com.archery.delaycam.service.ViewerForegroundService, generation: Long): Boolean {
+        if (!canStartSharingService(generation)) return false
+        sharingService = service
+        sharingReady?.complete(true)
+        (getApplication<Application>() as? com.archery.delaycam.DelayCamApp)?.refreshCameraOwner()
+        return true
+    }
+    fun sharingServiceFailed(generation: Long) { if (generation == viewerGeneration) sharingReady?.complete(false) }
+    fun sharingServiceDestroyed(service: com.archery.delaycam.service.ViewerForegroundService, generation: Long) {
+        if (sharingService === service && generation == viewerGeneration) {
+            sharingService = null
+            closeViewerShare("背景分享已停止，請回到 App 重新開啟；舊連結已失效。")
+        }
+    }
+
     fun startViewerShare() {
-        if (!BuildConfig.LAN_VIEWER_TRIAL || !captureSession.isForeground() ||
+        if (!BuildConfig.LAN_VIEWER_TRIAL || !uiForeground || !captureSession.isForeground() ||
             _viewerShare.value.running || _viewerShare.value.busy) return
         val generation = ++viewerGeneration
         _viewerShare.value = ViewerShareState(busy = true)
@@ -111,6 +133,14 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             var pending: com.archery.delaycam.viewer.LanViewerServer? = null
             try {
+                val app = getApplication<Application>() as com.archery.delaycam.DelayCamApp
+                check(app.peekModel() === this@DelayCamViewModel) { "No active capture owner" }
+                val ready = CompletableDeferred<Boolean>().also { sharingReady = it }
+                androidx.core.content.ContextCompat.startForegroundService(app,
+                    android.content.Intent(app, com.archery.delaycam.service.ViewerForegroundService::class.java)
+                        .putExtra(com.archery.delaycam.service.ViewerForegroundService.GENERATION, generation))
+                check(kotlinx.coroutines.withTimeoutOrNull(5_000) { ready.await() } == true) { "Camera service unavailable" }
+                if (generation != viewerGeneration) return@launch
                 val links = withContext(Dispatchers.IO) {
                     val app = getApplication<Application>()
                     val server = com.archery.delaycam.viewer.LanViewerServer(viewerSource,
@@ -127,7 +157,10 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
                 _viewerShare.value = _viewerShare.value.copy(running = true, busy = false, links = links, error = null)
             } catch (e: CancellationException) { throw e
             } catch (e: Exception) {
-                if (generation == viewerGeneration) _viewerShare.value = ViewerShareState(error = "無法開啟觀看連線，請稍後重試。")
+                if (generation == viewerGeneration) {
+                    closeViewerShare(null)
+                    _viewerShare.value = ViewerShareState(error = "無法啟動背景拍攝分享，請保持 App 開啟並確認相機權限後重試。")
+                }
                 Log.w(TAG, "Viewer server start failed", e)
             } finally { pending?.close() }
         }
@@ -152,6 +185,16 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
         viewerServer?.close(); viewerServer = null
         viewerSource.reset()
         _viewerShare.value = ViewerShareState(notice = notice)
+        sharingReady?.complete(false); sharingReady = null
+        val previous = sharingService
+        sharingService = null
+        previous?.finishSharing()
+        val app = getApplication<Application>() as? com.archery.delaycam.DelayCamApp
+        if (app?.peekModel() === this) {
+            app.stopService(android.content.Intent(app, com.archery.delaycam.service.ViewerForegroundService::class.java))
+            if (!uiForeground) suspendCapture()
+            app.refreshCameraOwner()
+        }
     }
 
     private val _appState = MutableStateFlow(AppState.LIVE)
@@ -278,7 +321,7 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
 
     private fun syncGestureScene() {
         gestureEngine.setScene(when {
-            !practiceVisible || !captureSession.isForeground() -> GestureScene.DISABLED
+            !uiForeground || !practiceVisible || !captureSession.isForeground() -> GestureScene.DISABLED
             _appState.value == AppState.REPLAY -> GestureScene.REPLAY
             _appState.value == AppState.SAVING -> GestureScene.SAVING
             else -> GestureScene.LIVE
@@ -286,7 +329,7 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
     }
 
     private fun handleGestureAction(action: GestureAction, scene: GestureScene) {
-        if (!practiceVisible || !captureSession.isForeground()) return
+        if (!uiForeground || !practiceVisible || !captureSession.isForeground()) return
         val current = when (_appState.value) {
             AppState.LIVE -> GestureScene.LIVE
             AppState.SAVING -> GestureScene.SAVING
@@ -323,7 +366,8 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
     val previewUseCase: Preview get() = _previewSource.value
     private val _cameraSourceStatus = MutableStateFlow(com.archery.delaycam.camera.CameraSourceStatus())
     val cameraSourceStatus = _cameraSourceStatus.asStateFlow()
-    fun publishCameraPreview(preview: Preview) { _previewSource.value = preview }
+    val previewSurfaceRouter = com.archery.delaycam.camera.PreviewSurfaceRouter(application, previewUseCase)
+    fun publishCameraPreview(preview: Preview) { previewSurfaceRouter.setPreview(preview); _previewSource.value = preview }
     fun reportCameraSource(status: com.archery.delaycam.camera.CameraSourceStatus) { _cameraSourceStatus.value = status }
 
     init {
@@ -370,6 +414,7 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
             override fun onRenderedFirstFrame() {
                 if (captureSession.isForeground() && livePlayer.mediaItemCount > 0) {
                     liveHasRenderedFrame = true
+                    backgroundPlaybackSuspended = false
                     fastResumeDeadlineMs = null
                     _warmupRemainingSec.value = null
                 }
@@ -388,6 +433,14 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
 
     /** Called on the main thread from Activity.onStart(), including first launch. */
     fun onAppForegrounded() {
+        uiForeground = true
+        syncGestureScene()
+        if (captureSession.isForeground()) {
+            if (backgroundPlaybackSuspended && practiceVisible && _appState.value != AppState.REPLAY) resumeBackgroundPlayback()
+            if (resumeReplayOnForeground && _appState.value == AppState.REPLAY) replayPlayer.playWhenReady = true
+            resumeReplayOnForeground = false
+            return
+        }
         val sessionId = captureSession.beginForeground() ?: return
         hasCameraFrame = false
         resetDelayedPlayback()
@@ -437,9 +490,25 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
 
     /** Called before CameraX stops receiving frames in Activity.onStop(). */
     fun onAppBackgrounded() {
-        if (_viewerShare.value.running || _viewerShare.value.busy) {
-            closeViewerShare("App 曾切到背景，觀看連線已關閉。請重新開啟，讓對方輸入畫面上的新網址；舊網址已失效。")
+        uiForeground = false
+        syncGestureScene()
+        replayReturnPolicy.suspend()
+        _replayReturnRemainingSec.value = null
+        resumeReplayOnForeground = replayPlayer.playWhenReady
+        replayPlayer.pause()
+        if (sharingServiceActive && (_viewerShare.value.running || _viewerShare.value.busy)) {
+            // Remote media and continuous recording keep advancing; the hidden local decoder owns no leases.
+            delayedPlayback.reset()
+            fastResumeDeadlineMs = null
+            backgroundPlaybackSuspended = true
+            return
         }
+        if (_viewerShare.value.running || _viewerShare.value.busy) closeViewerShare("背景分享尚未啟動，連線已關閉，請回到 App 重試。")
+        suspendCapture()
+    }
+
+    private fun suspendCapture() {
+        backgroundPlaybackSuspended = false
         val endingSessionId = captureSession.sessionForFrame()
         if (!captureSession.endForeground()) return
         gestureEngine.setScene(GestureScene.DISABLED)
@@ -455,7 +524,6 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
             closingCaptureSessionId = endingSessionId
         }
         Log.d(TAG, "app background: suspending capture and discarding old delay queue")
-        resumeReplayOnForeground = replayPlayer.playWhenReady
         replayPlayer.pause()
         resetDelayedPlayback()
         _warmupRemainingSec.value = settings.value.delaySec
@@ -555,7 +623,7 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
             viewerSource.update(true, settings.value.delaySec, settings.value.pictureMode)
             viewerSource.publish(segment, store)
         }
-        if (_appState.value != AppState.REPLAY) {
+        if (uiForeground && (!backgroundPlaybackSuspended || practiceVisible) && _appState.value != AppState.REPLAY) {
             if (!delayedPlayback.onSegmentFinalized(segment, store)) {
                 Log.w(TAG, "delay source discontinuity: falling back to warmup")
                 resetDelayedPlayback()
@@ -577,8 +645,9 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
         var lastChangedAtMs = SystemClock.elapsedRealtime()
         while (viewModelScope.isActive) {
             delay(1000)
+            if (!uiForeground) continue
             val deadline = fastResumeDeadlineMs
-            if (deadline != null && SystemClock.elapsedRealtime() >= deadline) {
+            if (practiceVisible && deadline != null && SystemClock.elapsedRealtime() >= deadline) {
                 Log.w(TAG, "fast return first-frame timeout: falling back to warmup")
                 resetDelayedPlayback()
             }
@@ -641,7 +710,7 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
 
     private suspend fun replayReturnTicker() {
         while (viewModelScope.isActive) {
-            if (_appState.value == AppState.REPLAY && captureSession.isForeground()) {
+            if (uiForeground && _appState.value == AppState.REPLAY && captureSession.isForeground()) {
                 val now = SystemClock.elapsedRealtime()
                 if (replayPlayer.playbackState == Player.STATE_ENDED) replayReturnPolicy.ended(now)
                 _replayReturnRemainingSec.value = replayReturnPolicy.remainingSeconds(now)
@@ -818,8 +887,15 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    private fun resumeBackgroundPlayback() {
+        replayBufferGeneration = bufferGeneration
+        if (!tryFastReturn()) { backgroundPlaybackSuspended = false; resetDelayedPlayback() }
+    }
+
     fun setPracticeVisible(visible: Boolean) {
         practiceVisible = visible
+        if (backgroundPlaybackSuspended && !visible) { delayedPlayback.reset(); fastResumeDeadlineMs = null }
+        if (backgroundPlaybackSuspended && visible && uiForeground && _appState.value != AppState.REPLAY) resumeBackgroundPlayback()
         syncGestureScene()
     }
 
@@ -1133,6 +1209,7 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
     override fun onCleared() {
         stopViewerShare()
         captureSession.close()
+        previewSurfaceRouter.close()
         cameraAnalysisExecutor.execute {
             stopSegmentEncoder()
             gestureEngine.close()

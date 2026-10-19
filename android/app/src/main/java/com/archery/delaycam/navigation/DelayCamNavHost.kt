@@ -50,8 +50,11 @@ import java.net.URLDecoder
  * the web prototype's showScreen(REPLAY) calls in triggerSave().
  */
 @Composable
-fun DelayCamNavHost(viewModel: DelayCamViewModel) {
+fun DelayCamNavHost(viewModel: DelayCamViewModel, openViewerRequest: Int = 0) {
     val navController = rememberNavController()
+    LaunchedEffect(openViewerRequest) {
+        if (openViewerRequest > 0 && BuildConfig.LAN_VIEWER_TRIAL) navController.navigate(Routes.VIEWER) { launchSingleTop = true }
+    }
     val approval by viewModel.deleteApproval.collectAsState()
     val deleteLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) {
         viewModel.onDeleteApprovalResult(it.resultCode == Activity.RESULT_OK)
@@ -109,7 +112,7 @@ fun DelayCamNavHost(viewModel: DelayCamViewModel) {
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        PracticeCameraLayout(previewSource, live = route == Routes.LIVE) { previewBounds ->
+        PracticeCameraLayout(previewSource, live = route == Routes.LIVE, surfaceRouter = viewModel.previewSurfaceRouter) { previewBounds ->
         RecordingScreenLayout(
             practice = route == Routes.LIVE || route == Routes.REPLAY || route == Routes.PLAYER,
             recording = { compact, modifier ->
