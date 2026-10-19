@@ -24,11 +24,14 @@ import com.archery.delaycam.viewer.LanViewerServer
 import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Rule
+import org.junit.FixMethodOrder
+import org.junit.runners.MethodSorters
 import org.junit.Test
 import java.io.File
 import java.net.Socket
 
 /** Actual CameraX/FGS/HTTP frames while Android Settings owns the screen, not just a retained status flag. */
+@FixMethodOrder(MethodSorters.NAME_ASCENDING)
 class ViewerBackgroundSharingTest {
     @get:Rule val compose = createEmptyComposeRule()
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
@@ -68,7 +71,7 @@ class ViewerBackgroundSharingTest {
         compose.waitUntil(10_000) { field(vm,"uiForeground") == false }
     }
 
-    @Test(timeout = 180_000) fun anotherAppKeepsNewFramesAndNotificationReturnsThenStopsAndSavesRecording() {
+    @Test(timeout = 180_000) fun aAnotherAppKeepsNewFramesAndNotificationReturnsThenStopsAndSavesRecording() {
         grant()
         var saved: Uri? = null
         lateinit var vm: DelayCamViewModel
@@ -134,7 +137,7 @@ class ViewerBackgroundSharingTest {
         saved?.let { context.contentResolver.delete(it,null,null) }
     }
 
-    @Test(timeout = 100_000) fun activityRecreationKeepsTheServiceCameraAndExistingLink() {
+    @Test(timeout = 100_000) fun bActivityRecreationKeepsTheServiceCameraAndExistingLink() {
         grant()
         lateinit var vm: DelayCamViewModel
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
@@ -159,17 +162,18 @@ class ViewerBackgroundSharingTest {
         }
     }
 
-    @Test(timeout = 120_000) fun blockedNotificationsDoNotStopBackgroundFramesAndServiceLossRevokesTheLink() {
+    @Test(timeout = 120_000) fun zBlockedNotificationChannelKeepsBackgroundFramesAndServiceLossRevokesTheLink() {
         grant()
-        val command = "appops set ${context.packageName} POST_NOTIFICATION ignore"
-        instrumentation.uiAutomation.executeShellCommand(command).close()
+        // Run last: Android preserves lowered channel importance until the test APK is removed.
+        val manager = context.getSystemService(NotificationManager::class.java)
+        manager.createNotificationChannel(android.app.NotificationChannel(ViewerForegroundService.CHANNEL, "拍攝與多裝置分享", NotificationManager.IMPORTANCE_NONE))
         lateinit var vm: DelayCamViewModel
         try {
             ActivityScenario.launch(MainActivity::class.java).use { scenario ->
                 try {
                     scenario.onActivity { vm = it.sessionModel }
                     compose.waitUntil(45_000) { vm.cameraSessionForFrame() != null && vm.warmupRemainingSec.value == null }
-                    assertFalse(NotificationManagerCompat.from(context).areNotificationsEnabled())
+                    assertEquals(NotificationManager.IMPORTANCE_NONE,manager.getNotificationChannel(ViewerForegroundService.CHANNEL).importance)
                     scenario.onActivity { vm.startViewerShare() }
                     compose.waitUntil(15_000) { vm.viewerShare.value.running }
                     val server = field(vm,"viewerServer") as LanViewerServer
@@ -178,12 +182,13 @@ class ViewerBackgroundSharingTest {
                     compose.waitUntil(30_000) { newest(server) > first }
                     decode(server,newest(server))
                     assertTrue(vm.sharingServiceActive)
+                    assertFalse(ViewerForegroundService.notificationsVisible(context))
                     context.stopService(Intent(context,ViewerForegroundService::class.java))
                     compose.waitUntil(15_000) { !vm.sharingServiceActive && !vm.viewerShare.value.running && vm.cameraSessionForFrame() == null }
                     assertTrue(vm.viewerShare.value.notice?.contains("背景分享已停止") == true)
                     assertTrue(runCatching { status(server) }.isFailure)
                 } finally { instrumentation.runOnMainSync { vm.stopViewerShare() } }
             }
-        } finally { instrumentation.uiAutomation.executeShellCommand("appops set ${context.packageName} POST_NOTIFICATION default").close() }
+        } finally { manager.deleteNotificationChannel(ViewerForegroundService.CHANNEL) }
     }
 }

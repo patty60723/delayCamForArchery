@@ -29,6 +29,7 @@ class DelayedPlaybackController(
     private data class Pinned(val ids: Set<String>, val lease: ImmutableSegmentStore.Lease)
     private val pinned = mutableListOf<Pinned>()
     private var fastTail: SegmentInfo? = null
+    private var fastMaxSegmentMs = FastResumePlan.MAX_SEGMENT_MS
 
     fun fastSourcePositionMs(): Long? {
         if (fastTail == null) return null
@@ -48,6 +49,7 @@ class DelayedPlaybackController(
         reset()
         pinned.add(Pinned(plan.segments.map(::id).toSet(), lease))
         fastTail = plan.segments.last()
+        fastMaxSegmentMs = plan.maxSegmentMs
         exoPlayer.setMediaItems(plan.segments.map(::item), 0, plan.positionMs)
         exoPlayer.prepare()
         exoPlayer.playWhenReady = true
@@ -57,7 +59,7 @@ class DelayedPlaybackController(
     fun onSegmentFinalized(segment: SegmentInfo, store: ImmutableSegmentStore? = null): Boolean {
         val tail = fastTail
         if (tail != null) {
-            if (!FastResumePlan.valid(segment) || segment.startedAtMs < tail.endedAtMs ||
+            if (!FastResumePlan.valid(segment, fastMaxSegmentMs) || segment.startedAtMs < tail.endedAtMs ||
                 segment.startedAtMs - tail.endedAtMs > FastResumePlan.MAX_GAP_MS ||
                 exoPlayer.mediaItemCount > 40) return false
             val lease = store?.acquire(listOf(segment)) ?: return false
@@ -147,6 +149,7 @@ class DelayedPlaybackController(
         exoPlayer.stop()
         exoPlayer.clearMediaItems()
         fastTail = null
+        fastMaxSegmentMs = FastResumePlan.MAX_SEGMENT_MS
         pinned.forEach { it.lease.close() }
         pinned.clear()
     }

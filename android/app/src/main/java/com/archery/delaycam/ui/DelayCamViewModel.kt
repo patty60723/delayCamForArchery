@@ -102,6 +102,7 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
     private var sharingService: com.archery.delaycam.service.ViewerForegroundService? = null
     private var sharingReady: CompletableDeferred<Boolean>? = null
     private var backgroundPlaybackSuspended = false
+    private var backgroundResumeUntil: Long? = null
     val sharingServiceActive: Boolean get() = sharingService != null
     fun canStartSharingService(generation: Long): Boolean = BuildConfig.LAN_VIEWER_TRIAL && uiForeground &&
         generation == viewerGeneration && (_viewerShare.value.busy || _viewerShare.value.running)
@@ -415,6 +416,7 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
                 if (captureSession.isForeground() && livePlayer.mediaItemCount > 0) {
                     liveHasRenderedFrame = true
                     backgroundPlaybackSuspended = false
+                    backgroundResumeUntil = null
                     fastResumeDeadlineMs = null
                     _warmupRemainingSec.value = null
                 }
@@ -501,6 +503,7 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
             delayedPlayback.reset()
             fastResumeDeadlineMs = null
             backgroundPlaybackSuspended = true
+            backgroundResumeUntil = null
             return
         }
         if (_viewerShare.value.running || _viewerShare.value.busy) closeViewerShare("背景分享尚未啟動，連線已關閉，請回到 App 重試。")
@@ -575,6 +578,8 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
      * instead of leaving a bare black screen until the next segment lands.
      */
     private fun resetDelayedPlayback() {
+        backgroundResumeUntil = null
+        backgroundPlaybackSuspended = false
         bufferGeneration++
         fastResumeDeadlineMs = null
         liveHasRenderedFrame = false
@@ -624,7 +629,9 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
             viewerSource.publish(segment, store)
         }
         if (uiForeground && (!backgroundPlaybackSuspended || practiceVisible) && _appState.value != AppState.REPLAY) {
-            if (!delayedPlayback.onSegmentFinalized(segment, store)) {
+            if (backgroundPlaybackSuspended && fastResumeDeadlineMs == null) {
+                resumeBackgroundPlayback()
+            } else if (!delayedPlayback.onSegmentFinalized(segment, store)) {
                 Log.w(TAG, "delay source discontinuity: falling back to warmup")
                 resetDelayedPlayback()
             }
@@ -646,6 +653,10 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
         while (viewModelScope.isActive) {
             delay(1000)
             if (!uiForeground) continue
+            if (practiceVisible && backgroundResumeUntil?.let { SystemClock.elapsedRealtime() >= it } == true) {
+                Log.w(TAG, "background resume has no usable completed target: falling back to warmup")
+                resetDelayedPlayback()
+            }
             val deadline = fastResumeDeadlineMs
             if (practiceVisible && deadline != null && SystemClock.elapsedRealtime() >= deadline) {
                 Log.w(TAG, "fast return first-frame timeout: falling back to warmup")
@@ -889,12 +900,20 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
 
     private fun resumeBackgroundPlayback() {
         replayBufferGeneration = bufferGeneration
-        if (!tryFastReturn()) { backgroundPlaybackSuspended = false; resetDelayedPlayback() }
+        if (tryFastReturn(FastResumePlan.BACKGROUND_MAX_SEGMENT_MS)) {
+            backgroundResumeUntil = null
+        } else {
+            // A healthy encoder may be finishing a longer GOP after a surface handoff.
+            // Keep its history; retry when the completed target arrives instead of discarding it.
+            liveHasRenderedFrame = false
+            _warmupRemainingSec.value = 0
+            if (backgroundResumeUntil == null) backgroundResumeUntil = SystemClock.elapsedRealtime() + 15_000L
+        }
     }
 
     fun setPracticeVisible(visible: Boolean) {
         practiceVisible = visible
-        if (backgroundPlaybackSuspended && !visible) { delayedPlayback.reset(); fastResumeDeadlineMs = null }
+        if (backgroundPlaybackSuspended && !visible) { delayedPlayback.reset(); fastResumeDeadlineMs = null; backgroundResumeUntil = null }
         if (backgroundPlaybackSuspended && visible && uiForeground && _appState.value != AppState.REPLAY) resumeBackgroundPlayback()
         syncGestureScene()
     }
@@ -953,7 +972,7 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
                     ClipSnapshot.copy(getApplication<Application>().cacheDir, segments)
                 } finally { sourceLease?.close() }
                 snapshot = copied
-                if (playAfterSave && captureSession.isForeground() && _appState.value == AppState.SAVING) {
+                if (playAfterSave && uiForeground && captureSession.isForeground() && _appState.value == AppState.SAVING) {
                     replaySnapshot = copied
                     replayReturnPolicy.begin()
                     replayPlayer.stop()
@@ -1033,14 +1052,14 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
         syncGestureScene()
     }
 
-    private fun tryFastReturn(): Boolean {
+    private fun tryFastReturn(maxSegmentMs: Long = FastResumePlan.MAX_SEGMENT_MS): Boolean {
         if (!BuildConfig.FAST_RESUME_TRIAL || !captureSession.isForeground() ||
             replayBufferGeneration != bufferGeneration) return false
         val store = immutableStore ?: return false
         val now = System.currentTimeMillis()
         val plan = FastResumePlan.create(
             segmentBuffer.segmentsCoveringRange(now - settings.value.delaySec * 1000L, now),
-            now, settings.value.delaySec * 1000L,
+            now, settings.value.delaySec * 1000L, maxSegmentMs,
         ) ?: return false
         liveHasRenderedFrame = false
         _warmupRemainingSec.value = 0 // Existing "waiting for first frame" notice, not another full countdown.

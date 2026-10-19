@@ -144,3 +144,6 @@ ViewerForegroundService提供低干擾、持續的「箭影正在拍攝與分享
 DelayCamApp擁有單一拍攝ViewModelStore與CameraCaptureController；CameraX綁到可由可見Activity或已提升的相機前景服務維持的LifecycleOwner。PreviewSurfaceRouter共用同一Preview，在背景交給可持續排空的ImageReader Surface，避免Activity TextureView消失阻斷ImageAnalysis。相機切換／比例／左右小窗與黑底橙色、既有元件不變。Activity重建沿用同一拍攝模型；最後Activity離開且沒有服務後，等待保存完成再釋放資源。
 
 服務不自動重啟。明確停止、滑掉App、系統結束服務／程序會關閉本次分享；下次由使用者重新開啟取得新連結。開始操作明示背景會繼續拍攝與錄影，不額外加確認視窗。UI以實際啟動前景服務成功後才顯示已開啟，啟動失敗可重試，不以保留server旗標假裝持續拍攝。
+
+
+背景返回若等待較長但完整的片段，沿用等待首畫格提示而不直接清除既有拍攝歷史；普通回放的安全規則不變。通知權限或分享頻道被關閉時，統一提示「分享通知未開啟」，仍提供App中的停止入口。

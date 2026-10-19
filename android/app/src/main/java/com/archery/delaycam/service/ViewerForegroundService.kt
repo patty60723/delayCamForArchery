@@ -26,7 +26,10 @@ class ViewerForegroundService : Service() {
         const val ACTION_STOP = "com.archery.delaycam.STOP_VIEWER"
         const val OPEN_VIEWER = "open_viewer"
         const val NOTIFICATION_ID = 2201
-        private const val CHANNEL = "camera_viewer"
+        const val CHANNEL = "camera_viewer"
+        fun notificationsVisible(context: android.content.Context): Boolean =
+            androidx.core.app.NotificationManagerCompat.from(context).areNotificationsEnabled() &&
+                context.getSystemService(NotificationManager::class.java).getNotificationChannel(CHANNEL)?.importance != NotificationManager.IMPORTANCE_NONE
     }
     private val app get() = application as DelayCamApp
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)

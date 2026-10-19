@@ -63,8 +63,8 @@ fun ViewerShareControls(viewModel: DelayCamViewModel) {
             modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }) }
         Text("先開好 Wi-Fi／熱點，再開啟觀看。背景會繼續拍攝與整段錄影，通知會顯示分享狀態；背景停止分享時，錄影會結束並保存。",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        if (state.running && !NotificationManagerCompat.from(context).areNotificationsEnabled()) {
-            Text("通知權限未開啟，分享仍會繼續；請回到此頁停止，或使用 Android 的執行中應用程式控制。", style = MaterialTheme.typography.bodySmall)
+        if (state.running && !com.archery.delaycam.service.ViewerForegroundService.notificationsVisible(context)) {
+            Text("分享通知未開啟，分享仍會繼續；請回到此頁停止，或使用 Android 的執行中應用程式控制。", style = MaterialTheme.typography.bodySmall)
         }
         if (state.running) {
             state.requests.forEach { request ->
