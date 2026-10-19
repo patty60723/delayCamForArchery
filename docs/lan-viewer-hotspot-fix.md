@@ -1,5 +1,7 @@
 # 多機21：熱點位址與失效連結提示
 
+> 版本22更新：切換App的規則已由[背景分享技術文件](lan-viewer-background-sharing.md)取代。開啟分享並等待網址後可切到其他App；以下保留為舊版紀錄。
+
 [下載多機21 APK ZIP](https://github.com/patty60723/delayCamForArchery/actions/runs/39012765059/artifacts/12093149763) · 解壓安裝 app-debug.apk，可直接更新多機19／20，不必解除安裝；單機測試18仍可保留。
 
 版本0.3.2-lan-viewer-test，code21，com.archery.delaycam.lanviewer，啟動器名稱「多機21·箭影」。

@@ -1,5 +1,7 @@
 # 多機20：獨立多裝置頁
 
+> 版本22更新：切換App的規則已由[背景分享技術文件](lan-viewer-background-sharing.md)取代。開啟分享並等待網址後可切到其他App；以下保留為舊版紀錄。
+
 > 多機21已依使用者決定移除設定捷徑，並修正熱點位址篩選與舊連結失效提示。最新使用方式請見[多機21文件](lan-viewer-hotspot-fix.md)；本頁保留多機20的驗證紀錄。
 
 [下載多機20 APK ZIP](https://github.com/patty60723/delayCamForArchery/actions/runs/38771731653/artifacts/11992890046) · 解壓安裝 app-debug.apk。版本 0.3.1-lan-viewer-test，code20，啟動器名稱「多機20·箭影」。
