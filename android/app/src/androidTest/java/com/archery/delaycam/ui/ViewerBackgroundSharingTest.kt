@@ -106,6 +106,7 @@ class ViewerBackgroundSharingTest {
                 assertNotNull("The foreground notification must be visible",target)
                 target!!.click()
                 compose.waitUntil(10_000) { field(vm,"uiForeground") == true }
+                scenario.onActivity { assertSame(vm,it.sessionModel) }
                 compose.onNodeWithText("核對碼 BBBBBB").performScrollTo().assertIsDisplayed()
                 compose.onNodeWithText("允許觀看").performScrollTo().performClick()
                 assertTrue(request(server,"/join/$join").toString(Charsets.UTF_8).contains(token))
@@ -162,18 +163,29 @@ class ViewerBackgroundSharingTest {
         }
     }
 
-    @Test(timeout = 120_000) fun zBlockedNotificationChannelKeepsBackgroundFramesAndServiceLossRevokesTheLink() {
+    @Test(timeout = 180_000) fun zBlockedNotificationChannelKeepsBackgroundFramesAndServiceLossRevokesTheLink() {
         grant()
-        // Run last: Android preserves lowered channel importance until the test APK is removed.
+        // Run last: user channel settings intentionally persist until the test package is removed.
         val manager = context.getSystemService(NotificationManager::class.java)
-        manager.createNotificationChannel(android.app.NotificationChannel(ViewerForegroundService.CHANNEL, "拍攝與多裝置分享", NotificationManager.IMPORTANCE_NONE))
+        if (manager.getNotificationChannel(ViewerForegroundService.CHANNEL) == null)
+            manager.createNotificationChannel(android.app.NotificationChannel(ViewerForegroundService.CHANNEL, "拍攝與多裝置分享", NotificationManager.IMPORTANCE_LOW))
         lateinit var vm: DelayCamViewModel
         try {
             ActivityScenario.launch(MainActivity::class.java).use { scenario ->
                 try {
                     scenario.onActivity { vm = it.sessionModel }
                     compose.waitUntil(45_000) { vm.cameraSessionForFrame() != null && vm.warmupRemainingSec.value == null }
-                    assertEquals(NotificationManager.IMPORTANCE_NONE,manager.getNotificationChannel(ViewerForegroundService.CHANNEL).importance)
+                    scenario.onActivity { it.startActivity(Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
+                        .putExtra(Settings.EXTRA_APP_PACKAGE,context.packageName)
+                        .putExtra(Settings.EXTRA_CHANNEL_ID,ViewerForegroundService.CHANNEL)) }
+                    assertTrue(device.wait(Until.hasObject(By.pkg("com.android.settings")),10_000))
+                    val switches = device.wait(Until.findObjects(By.pkg("com.android.settings").checkable(true)),10_000)
+                    val allow = switches?.filter { it.isEnabled && it.isChecked }?.minByOrNull { it.visibleBounds.top }
+                    assertNotNull("The system channel settings must expose an enabled notification switch",allow)
+                    allow!!.click()
+                    compose.waitUntil(10_000) { manager.getNotificationChannel(ViewerForegroundService.CHANNEL).importance == NotificationManager.IMPORTANCE_NONE }
+                    device.pressBack()
+                    compose.waitUntil(45_000) { field(vm,"uiForeground") == true && vm.cameraSessionForFrame() != null && vm.warmupRemainingSec.value == null }
                     scenario.onActivity { vm.startViewerShare() }
                     compose.waitUntil(15_000) { vm.viewerShare.value.running }
                     val server = field(vm,"viewerServer") as LanViewerServer
@@ -182,6 +194,7 @@ class ViewerBackgroundSharingTest {
                     compose.waitUntil(30_000) { newest(server) > first }
                     decode(server,newest(server))
                     assertTrue(vm.sharingServiceActive)
+                    assertEquals(NotificationManager.IMPORTANCE_NONE,manager.getNotificationChannel(ViewerForegroundService.CHANNEL).importance)
                     assertFalse(ViewerForegroundService.notificationsVisible(context))
                     context.stopService(Intent(context,ViewerForegroundService::class.java))
                     compose.waitUntil(15_000) { !vm.sharingServiceActive && !vm.viewerShare.value.running && vm.cameraSessionForFrame() == null }

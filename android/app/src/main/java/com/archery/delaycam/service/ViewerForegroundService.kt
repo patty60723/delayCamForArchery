@@ -55,7 +55,8 @@ class ViewerForegroundService : Service() {
         owner = model
         generation = requested
         try {
-            getSystemService(NotificationManager::class.java).createNotificationChannel(
+            val notifications = getSystemService(NotificationManager::class.java)
+            if (notifications.getNotificationChannel(CHANNEL) == null) notifications.createNotificationChannel(
                 NotificationChannel(CHANNEL, "拍攝與多裝置分享", NotificationManager.IMPORTANCE_LOW))
             ServiceCompat.startForeground(this, NOTIFICATION_ID, notification(model),
                 if (Build.VERSION.SDK_INT >= 30) ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA else 0)
@@ -79,7 +80,7 @@ class ViewerForegroundService : Service() {
     private fun notification(model: DelayCamViewModel): Notification {
         val pending = model.viewerShare.value.requests.size
         val recording = model.recordingPhase.value == RecordingPhase.RECORDING
-        val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java)
+        val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java).setAction(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
             .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
             .putExtra(OPEN_VIEWER, true), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val stop = PendingIntent.getService(this, generation.toInt(), Intent(this, ViewerForegroundService::class.java)

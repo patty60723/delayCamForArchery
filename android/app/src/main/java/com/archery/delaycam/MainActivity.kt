@@ -83,13 +83,18 @@ class MainActivity : ComponentActivity() {
     }
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        setIntent(intent)
-        if (intent.getBooleanExtra(ViewerForegroundService.OPEN_VIEWER, false)) openViewerRequest++
+        consumeViewerIntent(intent)
+    }
+    private fun consumeViewerIntent(value: Intent) {
+        if (value.getBooleanExtra(ViewerForegroundService.OPEN_VIEWER, false)) {
+            openViewerRequest++
+            value.removeExtra(ViewerForegroundService.OPEN_VIEWER)
+        }
     }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         app.activityAttached(this)
-        if (intent.getBooleanExtra(ViewerForegroundService.OPEN_VIEWER, false)) openViewerRequest++
+        consumeViewerIntent(intent)
         setContent {
             var hasCameraPermission by remember { mutableStateOf(ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) }
             val permissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
