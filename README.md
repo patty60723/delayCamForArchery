@@ -1,20 +1,20 @@
 # 射箭 Delay Camera
 
-讓射手獨自練習時,手機立在旁邊持續顯示「幾秒前的自己」——放箭後轉頭一看就能
-立刻檢視動作,不用等教練或賽後回看整支影片。完整產品邏輯見「射箭 Delay
-Camera App — 產品規格書」;這個 repo 目前有兩個部分:
+讓射手獨自練習時，手機立在旁邊持續顯示「幾秒前的自己」：放箭後轉頭一看就能檢視動作，不用等教練或事後翻整支影片。
 
-## [`android/`](android/) — 正式版(Kotlin 原生 App)
+**技術**：Kotlin · Jetpack Compose · CameraX · MediaPipe Gesture Recognizer · MediaCodec／MediaMuxer · Android 10 以上（API 29）· GitHub Actions 打包 APK 並在模擬器跑 instrumentation 測試
 
-**這是正確的版本。** Kotlin + Jetpack Compose + CameraX + MediaPipe
-GestureRecognizer + MediaCodec/MediaMuxer,照規格書實作常駐延遲緩衝、手勢/按鈕
-存檔、慢動作回放、設定、畫廊。手勢辨識模型已經包在 repo 裡,不用另外下載。
+**亮點**
+- **常駐延遲畫面**：持續錄影、延遲幾秒播放，放箭後回頭就看得到剛才的動作
+- **隔空手勢操作**：比個手勢就能存下剛才那一箭、控制回放，拉弓時不用碰手機
+- **慢動作回放與畫廊**：存下的片段可以慢放檢視，也能匯出到相簿
+- **先驗證、再實作**：互動手感先在網頁 prototype 試過，再實作進原生 App
 
-⚠️ 骨架完整,但目前**還沒有在真正的 Android SDK / 裝置上 build 或跑過一次**
-(寫這份骨架的環境下載不到 Android SDK)——在 Android Studio 裡開起來、裝到
-實機之前,請先讀 [`android/README.md`](android/README.md),裡面列了目前
-做過的驗證範圍,以及最可能需要除錯的幾個地方(片段錄影銜接、MediaMuxer 串接、
-延遲播放清單、YUV 轉換)。
+## [`android/`](android/) — 正式版（Kotlin 原生 App）
+
+Kotlin + Jetpack Compose + CameraX + MediaPipe GestureRecognizer + MediaCodec/MediaMuxer，
+實作常駐延遲緩衝、手勢／按鈕存檔、慢動作回放、設定、畫廊。手勢辨識模型已經包在 repo 裡，不用另外下載。
+建置方式、開發筆記與除錯紀錄見 [`android/README.md`](android/README.md)；產品、UX 與系統設計文件在 [`docs/`](docs/)。
 
 ## [`web-prototype/`](web-prototype/) — 開發用網頁 prototype(非正式版)
 
