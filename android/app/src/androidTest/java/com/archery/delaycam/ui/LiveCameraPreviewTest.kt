@@ -3,6 +3,8 @@ package com.archery.delaycam.ui
 import android.Manifest
 import androidx.activity.ComponentActivity
 import androidx.camera.core.CameraSelector
+import com.archery.delaycam.camera.delayImageAnalysis
+import com.archery.delaycam.camera.toRotatedBitmap
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
@@ -40,11 +42,16 @@ class LiveCameraPreviewTest {
             .grantRuntimePermission(activity.packageName, Manifest.permission.CAMERA)
         val provider = ProcessCameraProvider.getInstance(activity).get(10, TimeUnit.SECONDS)
         val preview = Preview.Builder().build()
-        val analysis = ImageAnalysis.Builder()
-            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST).build()
+        val analysis = delayImageAnalysis()
         val executor = Executors.newSingleThreadExecutor()
         val frames = AtomicInteger()
-        analysis.setAnalyzer(executor) { frame -> frames.incrementAndGet(); frame.close() }
+        analysis.setAnalyzer(executor) { frame ->
+            try {
+                val bitmap = frame.toRotatedBitmap()
+                bitmap.recycle()
+                frames.incrementAndGet()
+            } finally { frame.close() }
+        }
         var live by mutableStateOf(true)
         try {
             compose.setContent { DelayCamTheme {
@@ -87,13 +94,15 @@ class LiveCameraPreviewTest {
             .grantRuntimePermission(activity.packageName, Manifest.permission.CAMERA)
         val provider = ProcessCameraProvider.getInstance(activity).get(10, TimeUnit.SECONDS)
         val preview = Preview.Builder().build()
-        val analysis = ImageAnalysis.Builder()
-            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST).build()
+        val analysis = delayImageAnalysis()
         val executor = Executors.newSingleThreadExecutor()
         val frames = AtomicInteger()
         analysis.setAnalyzer(executor) { frame ->
-            frames.incrementAndGet()
-            frame.close()
+            try {
+                val bitmap = frame.toRotatedBitmap()
+                bitmap.recycle()
+                frames.incrementAndGet()
+            } finally { frame.close() }
         }
         var visible by mutableStateOf(false)
         try {

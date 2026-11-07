@@ -27,6 +27,7 @@ fun PracticeCameraLayout(
             width = visibleBounds?.let { (it.width / density).dp } ?: 1.dp,
             modifier = Modifier.offset { visibleBounds?.let {
                 IntOffset(it.left.roundToInt(), it.top.roundToInt())
-            } ?: IntOffset.Zero }, showLabel = false)
+            } ?: IntOffset.Zero }, showLabel = false,
+            aspectRatio = visibleBounds?.let { it.width / it.height } ?: 3f / 4f)
     }
 }

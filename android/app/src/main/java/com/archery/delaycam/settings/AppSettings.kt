@@ -7,7 +7,10 @@ data class AppSettings(
     val guideVertical: Boolean = true,
     val guideHorizontal: Boolean = true,
     val slowMoRate: Float = 0.5f,
+    val previewCorner: PreviewCorner = PreviewCorner.BOTTOM_RIGHT,
     val dominantHand: DominantHand = DominantHand.RIGHT,
+    val pictureMode: PictureMode = PictureMode.FIT,
+    val captureAspect: CaptureAspect = CaptureAspect.FOUR_THREE,
 ) {
     companion object {
         val DELAY_RANGE = 1..30
@@ -17,3 +20,16 @@ data class AppSettings(
 }
 
 enum class DominantHand { LEFT, RIGHT }
+
+
+enum class PreviewCorner { BOTTOM_LEFT, BOTTOM_RIGHT }
+
+/** Display only: exported footage always retains the complete captured picture. */
+enum class PictureMode { FIT, FILL }
+
+enum class CaptureAspect(val wideWidth: Int, val wideHeight: Int) {
+    FOUR_THREE(4, 3), SIXTEEN_NINE(16, 9);
+
+    fun ratioFor(width: Int, height: Int): Float = if (width > height)
+        wideWidth.toFloat() / wideHeight else wideHeight.toFloat() / wideWidth
+}

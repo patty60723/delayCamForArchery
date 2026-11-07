@@ -1,6 +1,11 @@
 package com.archery.delaycam.ui.gallery
 
 import android.content.Intent
+import com.archery.delaycam.gallery.ClipPresentationStore
+import com.archery.delaycam.gallery.PictureRange
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.delay
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -12,15 +17,26 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.exoplayer.ExoPlayer
 import com.archery.delaycam.ui.DelayCamViewModel
+import com.archery.delaycam.ui.components.DeleteClipAction
 import com.archery.delaycam.ui.playback.*
 
 @Composable
 fun PlayerScreen(viewModel: DelayCamViewModel, clipUri: String, clipName: String, onBack: () -> Unit) {
+    val sharing = rememberClipSharing()
     val context = LocalContext.current
     val settings by viewModel.settings.collectAsState()
     val mirrored by viewModel.mirrorVideo.collectAsState()
-    var confirmDelete by remember { mutableStateOf(false) }
     val player = remember(clipUri) { ExoPlayer.Builder(context).build() }
+    val ranges by produceState<List<PictureRange>>(emptyList(), clipUri) {
+        value = withContext(Dispatchers.IO) { ClipPresentationStore(context).read(clipUri.toUri()) }
+    }
+    var contentAspect by remember(clipUri) { mutableStateOf<Float?>(null) }
+    LaunchedEffect(player, ranges) {
+        while (true) {
+            contentAspect = ClipPresentationStore.aspectAt(ranges, player.currentPosition)
+            delay(100)
+        }
+    }
     DisposableEffect(player) {
         player.setMediaItem(MediaItem.fromUri(clipUri.toUri()))
         player.playbackParameters = PlaybackParameters(settings.slowMoRate)
@@ -28,42 +44,18 @@ fun PlayerScreen(viewModel: DelayCamViewModel, clipUri: String, clipName: String
         player.playWhenReady = true
         onDispose { player.release() }
     }
-    Column(Modifier.fillMaxSize()) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
-            TextButton(onClick = onBack) { Text("返回影片") }
-            Text("已保存影片", Modifier.padding(12.dp), style = MaterialTheme.typography.titleSmall)
-        }
-        Box(Modifier.weight(1f)) {
-            MediaReviewLayout(
-                video = { modifier -> VideoPlayer(player, mirrored, modifier) },
-                controls = {
-                    PlaybackControls(player, mirrored, viewModel::setMirrorVideo,
-                        onSpeedChange = { rate -> viewModel.updateSettings { it.copy(slowMoRate = rate) } })
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(onClick = {
-                            val intent = Intent(Intent.ACTION_SEND).apply {
-                                type = "video/mp4"
-                                putExtra(Intent.EXTRA_STREAM, clipUri.toUri())
-                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                            }
-                            context.startActivity(Intent.createChooser(intent, "分享影片"))
-                        }, modifier = Modifier.weight(1f)) { Text("分享影片") }
-                        TextButton(onClick = { confirmDelete = true }, modifier = Modifier.weight(1f)) {
-                            Text("刪除影片", color = MaterialTheme.colorScheme.error)
-                        }
-                    }
-                },
-            )
-        }
-    }
-    if (confirmDelete) AlertDialog(
-        onDismissRequest = { confirmDelete = false },
-        title = { Text("刪除這段影片？") },
-        text = { Text(clipName + "\n刪除後無法從 App 復原。") },
-        dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("保留影片") } },
-        confirmButton = { TextButton(onClick = {
-            confirmDelete = false
-            viewModel.deleteClip(clipUri.toUri(), onDeleted = onBack)
-        }) { Text("刪除影片", color = MaterialTheme.colorScheme.error) } },
+    MediaReviewLayout(
+        video = { modifier -> VideoPlayer(player, mirrored, modifier, contentAspectOverride = contentAspect, pictureMode = settings.pictureMode) },
+        header = { Text("已保存影片", Modifier.padding(12.dp), style = MaterialTheme.typography.titleSmall) },
+        controls = {
+            PlaybackControls(player, mirrored, viewModel::setMirrorVideo,
+                onSpeedChange = { rate -> viewModel.updateSettings { it.copy(slowMoRate = rate) } })
+            OutlinedButton(onClick = { sharing.share(listOf(clipUri.toUri())) }, enabled = !sharing.busy,
+                modifier = Modifier.fillMaxWidth()) { Text(if (sharing.busy) "正在準備分享…" else "分享影片") }
+            sharing.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            DeleteClipAction(viewModel, clipUri.toUri(), clipName, onDeleted = onBack,
+                modifier = Modifier.fillMaxWidth())
+        },
+        onBack = onBack, backLabel = "返回影片",
     )
 }

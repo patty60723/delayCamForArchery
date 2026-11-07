@@ -1,5 +1,6 @@
 package com.archery.delaycam.ui
 
+import com.archery.delaycam.camera.playbackItem
 import android.app.Application
 import android.graphics.Bitmap
 import android.os.SystemClock
@@ -8,6 +9,9 @@ import androidx.camera.core.Preview
 import androidx.core.net.toUri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.archery.delaycam.BuildConfig
+import com.archery.delaycam.camera.ImmutableSegmentStore
+import com.archery.delaycam.camera.FastResumePlan
 import com.archery.delaycam.camera.ClipExporter
 import com.archery.delaycam.camera.ClipSnapshot
 import com.archery.delaycam.camera.MediaStoreExport
@@ -38,10 +42,14 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import com.archery.delaycam.gallery.GallerySelection
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -50,6 +58,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.util.concurrent.Executors
 import java.io.File
 
@@ -66,6 +76,8 @@ private const val STALL_THRESHOLD_MS = 3000L
  * live mirror + replay), the gesture engine, and the LIVE/SAVING/REPLAY
  * state machine (spec 2.2: new triggers are ignored outside LIVE).
  */
+data class ClipDeletionState(val uri: android.net.Uri? = null, val busy: Boolean = false, val error: String? = null)
+
 class DelayCamViewModel(application: Application) : AndroidViewModel(application) {
 
     private val settingsRepository = SettingsRepository(application)
@@ -73,19 +85,54 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
 
     private val _settings = MutableStateFlow(AppSettings())
     val settings: StateFlow<AppSettings> = _settings.asStateFlow()
+    private var pendingSettings: AppSettings? = null
+    private val settingsSaveMutex = Mutex()
+    @Volatile private var hasCameraFrame = false
 
     private val _appState = MutableStateFlow(AppState.LIVE)
     val appState: StateFlow<AppState> = _appState.asStateFlow()
 
+    private val _cameraAspectRatio = MutableStateFlow(3f / 4f)
+    val cameraAspectRatio: StateFlow<Float> = _cameraAspectRatio.asStateFlow()
+
     private val _warmupRemainingSec = MutableStateFlow<Int?>(null)
     val warmupRemainingSec: StateFlow<Int?> = _warmupRemainingSec.asStateFlow()
     private var liveHasRenderedFrame = false
+    private var immutableStore: ImmutableSegmentStore? = null
+    private var bufferGeneration = 0L
+    private var replayBufferGeneration = -1L
+    private var appliedDelaySec = AppSettings().delaySec
+    private var fastResumeDeadlineMs: Long? = null
 
     private val _gestureStatus = MutableStateFlow("手勢辨識初始化中…")
     val gestureStatus: StateFlow<String> = _gestureStatus.asStateFlow()
 
     private val _toast = MutableStateFlow<String?>(null)
     val toast: StateFlow<String?> = _toast.asStateFlow()
+
+    private val _gallerySelection = MutableStateFlow(GallerySelection())
+    val gallerySelection = _gallerySelection.asStateFlow()
+    private val _galleryMessage = MutableStateFlow<String?>(null)
+    val galleryMessage = _galleryMessage.asStateFlow()
+    private val _galleryLoading = MutableStateFlow(false)
+    val galleryLoading = _galleryLoading.asStateFlow()
+    private val _batchDeleting = MutableStateFlow(false)
+    val batchDeleting = _batchDeleting.asStateFlow()
+    private var batchApproval: CompletableDeferred<Boolean>? = null
+    private var galleryRefreshGeneration = 0L
+
+    fun selectGalleryClip(id: String) {
+        if (!_batchDeleting.value && !_clipDeletion.value.busy)
+            _gallerySelection.value = _gallerySelection.value.toggle(id)
+    }
+    fun enterGallerySelection() { _gallerySelection.value = GallerySelection(active = true) }
+    fun cancelGallerySelection() {
+        if (!_batchDeleting.value) _gallerySelection.value = GallerySelection()
+    }
+    fun selectAllGalleryClips() {
+        if (!_batchDeleting.value && !_clipDeletion.value.busy)
+            _gallerySelection.value = _gallerySelection.value.toggleAll(_galleryClips.value.map { it.uri.toString() })
+    }
 
     private val _galleryClips = MutableStateFlow<List<ClipEntry>>(emptyList())
     val galleryClips: StateFlow<List<ClipEntry>> = _galleryClips.asStateFlow()
@@ -101,6 +148,13 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
     val recordingPhase: StateFlow<RecordingPhase> = _recordingPhase.asStateFlow()
     private val _recordingSave = MutableStateFlow(SaveStatus())
     val recordingSave: StateFlow<SaveStatus> = _recordingSave.asStateFlow()
+    private data class PendingDeletion(val uri: android.net.Uri, val onDeleted: () -> Unit, val retry: Boolean)
+    private var pendingDeletion: PendingDeletion? = null
+    private val _deleteApproval = MutableStateFlow<android.content.IntentSender?>(null)
+    val deleteApproval: StateFlow<android.content.IntentSender?> = _deleteApproval.asStateFlow()
+    private val _clipDeletion = MutableStateFlow(ClipDeletionState())
+    val clipDeletion: StateFlow<ClipDeletionState> = _clipDeletion.asStateFlow()
+
     private val _clipSave = MutableStateFlow(SaveStatus())
     val clipSave: StateFlow<SaveStatus> = _clipSave.asStateFlow()
     private val _mirrorVideo = MutableStateFlow(true)
@@ -109,6 +163,8 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
     private var recordingHadGaps = false
     private var recordingStoppedInBackground = false
     private var pendingRecordingExport: File? = null
+    private var pendingRecordingRanges: List<com.archery.delaycam.gallery.PictureRange> = emptyList()
+    private var pendingRecordingAspect: Float? = null
     private var recordingStopTimeout: Job? = null
     private var clipSaveJob: Job? = null
     private var replaySnapshot: ClipSnapshot? = null
@@ -120,8 +176,8 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
     private var practiceVisible = false
 
     private sealed interface RecordingCommand {
-        data object Start : RecordingCommand
-        data class Append(val segment: SegmentInfo) : RecordingCommand
+        data class Start(val aspect: Float?) : RecordingCommand
+        data class Append(val segment: SegmentInfo, val lease: ImmutableSegmentStore.Lease?) : RecordingCommand
         data object Stop : RecordingCommand
         data class Cleanup(val prefix: String, val shotJob: Job?) : RecordingCommand
     }
@@ -195,13 +251,24 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
      * too, matching the web prototype's "buffer runs regardless of screen"
      * behaviour.
      */
-    val previewUseCase: Preview = Preview.Builder().build()
+    private val initialSettings = CompletableDeferred<Unit>()
+    suspend fun awaitInitialSettings() = initialSettings.await()
+    private val _previewSource = MutableStateFlow(com.archery.delaycam.camera.cameraPreview())
+    val previewSource: StateFlow<Preview> = _previewSource.asStateFlow()
+    val previewUseCase: Preview get() = _previewSource.value
+    private val _cameraSourceStatus = MutableStateFlow(com.archery.delaycam.camera.CameraSourceStatus())
+    val cameraSourceStatus = _cameraSourceStatus.asStateFlow()
+    fun publishCameraPreview(preview: Preview) { _previewSource.value = preview }
+    fun reportCameraSource(status: com.archery.delaycam.camera.CameraSourceStatus) { _cameraSourceStatus.value = status }
 
     init {
         viewModelScope.launch {
             settingsRepository.settingsFlow.collect { loaded ->
+                if (pendingSettings != null && pendingSettings != loaded) return@collect
+                pendingSettings = null
                 _settings.value = loaded
                 applyBufferWindow(loaded)
+                initialSettings.complete(Unit)
             }
         }
         viewModelScope.launch { refreshGallery() }
@@ -238,6 +305,7 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
             override fun onRenderedFirstFrame() {
                 if (captureSession.isForeground() && livePlayer.mediaItemCount > 0) {
                     liveHasRenderedFrame = true
+                    fastResumeDeadlineMs = null
                     _warmupRemainingSec.value = null
                 }
             }
@@ -256,22 +324,26 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
     /** Called on the main thread from Activity.onStart(), including first launch. */
     fun onAppForegrounded() {
         val sessionId = captureSession.beginForeground() ?: return
+        hasCameraFrame = false
         resetDelayedPlayback()
         syncGestureScene()
         _warmupRemainingSec.value = settings.value.delaySec
         Log.d(TAG, "app foreground: capture session=$sessionId, warming fresh delay buffer")
+        val prefix = "capture_${sessionId}_${System.nanoTime()}"
+        val store = if (BuildConfig.FAST_RESUME_TRIAL)
+            ImmutableSegmentStore(getApplication<Application>().cacheDir, prefix) else null
+        immutableStore = store
         cameraAnalysisExecutor.execute {
-            if (!captureSession.isCurrent(sessionId)) return@execute
-            val prefix = "capture_${sessionId}_${System.nanoTime()}"
+            if (!captureSession.isCurrent(sessionId)) { store?.close(); return@execute }
             val encoder = ContinuousSegmentEncoder(
                 cacheDir = getApplication<Application>().cacheDir,
                 onSegmentFinalized = { segment ->
                     // Finalization posts to main. A stopped encoder can still
                     // have callbacks queued when the next Activity starts.
                     if (captureSession.isCurrent(sessionId)) {
-                        onSegmentFinalized(segment)
+                        onSegmentFinalized(segment, store)
                     } else if (closingCaptureSessionId == sessionId) {
-                        appendRecordingSegment(segment)
+                        appendRecordingSegment(segment, store)
                     }
                 },
                 onStopped = {
@@ -279,9 +351,11 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
                         closingCaptureSessionId = null
                         finishRecordingAtBoundary()
                     }
-                    recordingCommands.trySend(RecordingCommand.Cleanup(prefix, clipSaveJob))
+                    if (store != null) store.close()
+                    else recordingCommands.trySend(RecordingCommand.Cleanup(prefix, clipSaveJob))
                 },
                 filePrefix = prefix,
+                immutableStore = store,
             )
             val currentSettings = settings.value
             encoder.setRingSize(
@@ -327,7 +401,10 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
     /** Only called on cameraAnalysisExecutor, with the session captured before conversion. */
     fun onCameraFrame(bitmap: Bitmap, timestampMs: Long, sessionId: Long) {
         if (!captureSession.isCurrent(sessionId)) return
-        segmentEncoder?.onFrame(bitmap)
+        val aspect = settings.value.captureAspect.ratioFor(bitmap.width, bitmap.height)
+        _cameraAspectRatio.value = aspect
+        hasCameraFrame = true
+        segmentEncoder?.onFrame(bitmap, aspect)
         if (captureSession.isCurrent(sessionId)) {
             gestureEngine.analyzeBitmap(bitmap, timestampMs)
         }
@@ -362,6 +439,8 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
      * instead of leaving a bare black screen until the next segment lands.
      */
     private fun resetDelayedPlayback() {
+        bufferGeneration++
+        fastResumeDeadlineMs = null
         liveHasRenderedFrame = false
         delayedPlayback.reset()
         segmentBuffer.clear()
@@ -370,12 +449,28 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
 
     fun updateSettings(update: (AppSettings) -> AppSettings) {
         val next = update(_settings.value)
+        if (next == _settings.value) return
+        if (next.captureAspect != _settings.value.captureAspect && recordingLifecycle.phase != RecordingPhase.IDLE) {
+            _toast.value = "請先停止錄影，再切換取景比例"
+            return
+        }
+        pendingSettings = next
         _settings.value = next
         applyBufferWindow(next)
-        viewModelScope.launch { settingsRepository.save(next) }
+        viewModelScope.launch {
+            // Preserve request order, but never require a UI-thread transform for
+            // a DataStore transaction. Rapid changes must persist the last choice.
+            settingsSaveMutex.withLock {
+                withContext(Dispatchers.IO) { settingsRepository.save(next) }
+            }
+        }
     }
 
     private fun applyBufferWindow(settings: AppSettings) {
+        if (BuildConfig.FAST_RESUME_TRIAL && appliedDelaySec != settings.delaySec) {
+            appliedDelaySec = settings.delaySec
+            resetDelayedPlayback()
+        }
         // Must cover delaySec+backtrackSec, not just whichever is larger: by
         // the time the archer reacts to what the delayed screen shows, the
         // shot they want captured is already delaySec+backtrackSec behind
@@ -385,12 +480,15 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
         segmentEncoder?.setRingSize(windowSec + 1)
     }
 
-    private fun onSegmentFinalized(segment: SegmentInfo) {
+    private fun onSegmentFinalized(segment: SegmentInfo, store: ImmutableSegmentStore? = immutableStore) {
         segmentBuffer.push(segment)
         if (_appState.value != AppState.REPLAY) {
-            delayedPlayback.onSegmentFinalized(segment)
+            if (!delayedPlayback.onSegmentFinalized(segment, store)) {
+                Log.w(TAG, "delay source discontinuity: falling back to warmup")
+                resetDelayedPlayback()
+            }
         }
-        appendRecordingSegment(segment)
+        appendRecordingSegment(segment, store)
     }
 
     /**
@@ -406,6 +504,18 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
         var lastChangedAtMs = SystemClock.elapsedRealtime()
         while (viewModelScope.isActive) {
             delay(1000)
+            val deadline = fastResumeDeadlineMs
+            if (deadline != null && SystemClock.elapsedRealtime() >= deadline) {
+                Log.w(TAG, "fast return first-frame timeout: falling back to warmup")
+                resetDelayedPlayback()
+            }
+            val sourcePosition = delayedPlayback.fastSourcePositionMs()
+            if (BuildConfig.FAST_RESUME_TRIAL && liveHasRenderedFrame &&
+                captureSession.isForeground() && _appState.value == AppState.LIVE && sourcePosition != null &&
+                kotlin.math.abs(System.currentTimeMillis() - sourcePosition - settings.value.delaySec * 1000L) > 3_000L) {
+                Log.w(TAG, "fast return source drift: falling back to warmup")
+                resetDelayedPlayback()
+            }
             val playbackState = livePlayer.playbackState
             // ENDED means the playlist ran out while the next segment is being
             // produced. enqueue() resumes from that new item when it arrives.
@@ -496,7 +606,9 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
                 _recordingElapsedSec.value = 0
                 _recordingSave.value = SaveStatus()
                 publishRecordingPhase()
-                recordingCommands.trySend(RecordingCommand.Start)
+                val wide = _cameraAspectRatio.value > 1f
+                val recordAspect = settings.value.captureAspect.ratioFor(if (wide) 4 else 3, if (wide) 3 else 4)
+                recordingCommands.trySend(RecordingCommand.Start(recordAspect.takeIf { hasCameraFrame }))
             }
             RecordingPhase.RECORDING -> requestRecordingStop()
             RecordingPhase.STARTING, RecordingPhase.STOPPING -> Unit
@@ -521,9 +633,14 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    private fun appendRecordingSegment(segment: SegmentInfo) {
+    private fun appendRecordingSegment(segment: SegmentInfo, store: ImmutableSegmentStore? = immutableStore) {
         if (!recordingLifecycle.acceptsSegments()) return
-        recordingCommands.trySend(RecordingCommand.Append(segment))
+        val lease = store?.acquire(listOf(segment))
+        if (store != null && lease == null) {
+            recordingHadGaps = true
+        } else if (recordingCommands.trySend(RecordingCommand.Append(segment, lease)).isFailure) {
+            lease?.close()
+        }
         if (recordingLifecycle.reachesStopBoundary(segment.endedAtMs)) finishRecordingAtBoundary()
     }
 
@@ -536,9 +653,9 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
     private suspend fun runRecordingCommands() {
         for (command in recordingCommands) {
             when (command) {
-                RecordingCommand.Start -> {
+                is RecordingCommand.Start -> {
                     try {
-                        continuousRecordingSession.start()
+                        continuousRecordingSession.start(command.aspect)
                         recordingLifecycle.started()
                         publishRecordingPhase()
                     } catch (e: Exception) {
@@ -555,7 +672,7 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
                     } catch (e: Exception) {
                         recordingHadGaps = true
                         Log.e(TAG, "recording segment was not appended", e)
-                    }
+                    } finally { command.lease?.close() }
                 }
                 RecordingCommand.Stop -> {
                     if (recordingLifecycle.phase != RecordingPhase.STOPPING) continue
@@ -565,6 +682,8 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
                         _recordingSave.value = _recordingSave.value.copy(displayName = displayName)
                         try {
                             pendingRecordingExport = continuousRecordingSession.stopToFile()
+                            pendingRecordingRanges = continuousRecordingSession.presentationRanges()
+                            pendingRecordingAspect = continuousRecordingSession.outputAspect
                             exportPendingRecording(displayName)
                         } catch (e: Exception) {
                             Log.e(TAG, "recording finalization/save failed", e)
@@ -594,9 +713,11 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
 
     private suspend fun exportPendingRecording(displayName: String) {
         val file = pendingRecordingExport ?: return
-        val uri = withContext(Dispatchers.IO) {
-            MediaStoreExport.saveVideoToMediaStore(getApplication(), file, displayName)
-        }
+        val normalized = com.archery.delaycam.camera.VideoAspectNormalizer.normalize(
+            getApplication(), file, pendingRecordingRanges, pendingRecordingAspect)
+        val uri = try { withContext(Dispatchers.IO) {
+            MediaStoreExport.saveVideoToMediaStore(getApplication(), normalized.file, displayName)
+        } } finally { if (normalized.file != file) normalized.file.delete() }
         pendingRecordingExport = null
         withContext(Dispatchers.IO) { file.delete() }
         val message = when {
@@ -667,25 +788,33 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
             _toast.value = "延遲畫面還在準備，請稍候再存檔"
             return
         }
+        val sourceLease = immutableStore?.acquire(segments)
+        if (BuildConfig.FAST_RESUME_TRIAL && sourceLease == null) {
+            _toast.value = "影片片段已更新，請稍候再存檔"
+            return
+        }
         if (playAfterSave) _appState.value = AppState.SAVING
         syncGestureScene()
         val displayName = clipDisplayName()
         _clipSave.value = SaveStatus(SavePhase.SAVING, displayName = displayName, message = "單箭儲存中…")
-        clipSaveJob = viewModelScope.launch {
+        clipSaveJob = viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) {
             var snapshot: ClipSnapshot? = null
             try {
-                val copied = ClipSnapshot.copy(getApplication<Application>().cacheDir, segments)
+                val copied = try {
+                    ClipSnapshot.copy(getApplication<Application>().cacheDir, segments)
+                } finally { sourceLease?.close() }
                 snapshot = copied
                 if (playAfterSave && captureSession.isForeground() && _appState.value == AppState.SAVING) {
                     replaySnapshot = copied
                     replayReturnPolicy.begin()
                     replayPlayer.stop()
                     replayPlayer.clearMediaItems()
-                    copied.segments.forEach { replayPlayer.addMediaItem(MediaItem.fromUri(it.file.toUri())) }
+                    copied.segments.forEach { replayPlayer.addMediaItem(it.playbackItem()) }
                     replayPlayer.playbackParameters = PlaybackParameters(currentSettings.slowMoRate)
                     replayPlayer.prepare()
                     replayPlayer.playWhenReady = true
-                    livePlayer.pause()
+                    replayBufferGeneration = bufferGeneration
+                    if (BuildConfig.FAST_RESUME_TRIAL) delayedPlayback.reset() else livePlayer.pause()
                     _appState.value = AppState.REPLAY
                 } else if (_appState.value == AppState.SAVING) {
                     _appState.value = AppState.LIVE
@@ -748,36 +877,178 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
             saveJob?.join()
             if (snapshot !== failedClipSnapshot) withContext(Dispatchers.IO) { snapshot.delete() }
         }
-        // The backlog scheduled during the replay covers a window the archer
-        // already watched - drop it and re-warm-up rather than dumping it in.
-        resetDelayedPlayback()
+        if (!tryFastReturn()) resetDelayedPlayback()
         replayReturnPolicy.suspend()
         _replayReturnRemainingSec.value = null
         _appState.value = AppState.LIVE
         syncGestureScene()
     }
 
+    private fun tryFastReturn(): Boolean {
+        if (!BuildConfig.FAST_RESUME_TRIAL || !captureSession.isForeground() ||
+            replayBufferGeneration != bufferGeneration) return false
+        val store = immutableStore ?: return false
+        val now = System.currentTimeMillis()
+        val plan = FastResumePlan.create(
+            segmentBuffer.segmentsCoveringRange(now - settings.value.delaySec * 1000L, now),
+            now, settings.value.delaySec * 1000L,
+        ) ?: return false
+        liveHasRenderedFrame = false
+        _warmupRemainingSec.value = 0 // Existing "waiting for first frame" notice, not another full countdown.
+        fastResumeDeadlineMs = SystemClock.elapsedRealtime() + 5_000L
+        if (!delayedPlayback.resume(plan, store)) return false
+        Log.i(TAG, "fast return: items=${plan.segments.size} seek=${plan.positionMs}ms delay=${settings.value.delaySec}s")
+        return true
+    }
+
     suspend fun refreshGallery() {
-        _galleryClips.value = try {
-            galleryRepository.listClips()
+        val generation = ++galleryRefreshGeneration
+        _galleryLoading.value = true
+        try {
+            val clips = galleryRepository.listClips()
+            if (generation == galleryRefreshGeneration) {
+                _galleryClips.value = clips
+                if (_galleryMessage.value == "無法讀取畫廊，請重新整理。") _galleryMessage.value = null
+                _gallerySelection.value = _gallerySelection.value.reconcile(clips.map { it.uri.toString() })
+            }
+        } catch (e: CancellationException) { throw e
         } catch (e: Exception) {
-            // MediaStore query failing (e.g. a transient content-provider
-            // hiccup) used to propagate straight out of GalleryScreen's
-            // LaunchedEffect and crash the whole app on opening Gallery.
             Log.e(TAG, "refreshGallery failed", e)
-            emptyList()
+            _galleryMessage.value = "無法讀取畫廊，請重新整理。"
+        } finally {
+            if (generation == galleryRefreshGeneration) _galleryLoading.value = false
         }
     }
 
+    /** Snapshot selection; failures stay selected. Permission prompts never expand this scope. */
+    fun deleteSelectedGalleryClips() {
+        if (_batchDeleting.value || _clipDeletion.value.busy) return
+        val targets = _galleryClips.value.filter { it.uri.toString() in _gallerySelection.value.ids }
+        if (targets.isEmpty()) return
+        _batchDeleting.value = true
+        viewModelScope.launch {
+            val deleted = mutableSetOf<String>()
+            val approvalNeeded = mutableListOf<android.net.Uri>()
+            var cancelled = false
+            suspend fun rememberDeleted(uri: android.net.Uri) {
+                forgetDeletedClip(uri)
+                deleted += uri.toString()
+                _galleryClips.value = _galleryClips.value.filterNot { it.uri == uri }
+            }
+            suspend fun requestApproval(sender: android.content.IntentSender): Boolean {
+                val result = CompletableDeferred<Boolean>()
+                batchApproval = result
+                _deleteApproval.value = sender
+                return try { result.await() } finally {
+                    batchApproval = null
+                    _deleteApproval.value = null
+                }
+            }
+            try {
+                for ((index, clip) in targets.withIndex()) {
+                    _galleryMessage.value = "正在刪除 ${index + 1} / ${targets.size} 段…"
+                    try {
+                        galleryRepository.deleteClip(clip.uri)
+                        rememberDeleted(clip.uri)
+                    } catch (e: CancellationException) { throw e
+                    } catch (e: Exception) {
+                        if (e is SecurityException && android.os.Build.VERSION.SDK_INT >= 30) {
+                            approvalNeeded += clip.uri
+                        } else if (!cancelled && android.os.Build.VERSION.SDK_INT == 29 && e is android.app.RecoverableSecurityException) {
+                            if (requestApproval(e.userAction.actionIntent.intentSender)) {
+                                try {
+                                    galleryRepository.deleteClip(clip.uri)
+                                    rememberDeleted(clip.uri)
+                                } catch (e: CancellationException) { throw e
+                                } catch (_: Exception) { /* retain for retry */ }
+                            } else cancelled = true
+                        }
+                    }
+                }
+                for (chunk in approvalNeeded.chunked(1000)) {
+                    if (cancelled) break
+                    try {
+                        _galleryMessage.value = "等待系統確認刪除 ${chunk.size} 段影片…"
+                        val sender = android.provider.MediaStore.createDeleteRequest(
+                            getApplication<Application>().contentResolver, chunk).intentSender
+                        if (requestApproval(sender)) {
+                            for (uri in chunk) {
+                                try { if (!galleryRepository.clipExists(uri)) rememberDeleted(uri) }
+                                catch (e: CancellationException) { throw e }
+                                catch (_: Exception) { /* retain for retry */ }
+                            }
+                        } else cancelled = true
+                    } catch (e: CancellationException) { throw e
+                    } catch (_: Exception) { /* retain for retry */ }
+                }
+                val remaining = targets.map { it.uri.toString() }.toSet() - deleted
+                _gallerySelection.value = GallerySelection(active = remaining.isNotEmpty(), ids = remaining)
+                refreshGallery()
+                _galleryMessage.value = if (remaining.isEmpty()) "已刪除 ${deleted.size} 段影片"
+                    else "已刪除 ${deleted.size} 段，${remaining.size} 段未刪除" + if (cancelled) "（已取消系統授權）" else "，可重新選取刪除重試。"
+            } finally {
+                _batchDeleting.value = false
+                batchApproval = null
+                _deleteApproval.value = null
+            }
+        }
+    }
+
+    fun onDeleteApprovalLaunched() { _deleteApproval.value = null }
+
     fun deleteClip(uri: android.net.Uri, onDeleted: () -> Unit = {}) {
+        if (_clipDeletion.value.busy || _batchDeleting.value) return
+        _clipDeletion.value = ClipDeletionState(uri, busy = true)
         viewModelScope.launch {
             try {
                 galleryRepository.deleteClip(uri)
-                refreshGallery()
-                onDeleted()
+                completeClipDeletion(uri, onDeleted)
             } catch (e: Exception) {
                 Log.e(TAG, "delete clip failed", e)
-                _toast.value = "影片未能刪除，請稍後再試"
+                val approval = try {
+                    if (e is SecurityException && android.os.Build.VERSION.SDK_INT >= 30)
+                        android.provider.MediaStore.createDeleteRequest(getApplication<Application>().contentResolver, listOf(uri)).intentSender
+                    else if (android.os.Build.VERSION.SDK_INT == 29 && e is android.app.RecoverableSecurityException)
+                        e.userAction.actionIntent.intentSender else null
+                } catch (_: Exception) { null }
+                if (approval != null) {
+                    pendingDeletion = PendingDeletion(uri, onDeleted, android.os.Build.VERSION.SDK_INT == 29)
+                    _deleteApproval.value = approval
+                } else _clipDeletion.value = ClipDeletionState(uri, error = "影片未能刪除，請稍後重試。")
+            }
+        }
+    }
+
+    private fun forgetDeletedClip(uri: android.net.Uri) {
+        if (_clipSave.value.uri == uri) _clipSave.value = SaveStatus()
+        if (_recordingSave.value.uri == uri) _recordingSave.value = SaveStatus()
+        com.archery.delaycam.gallery.ClipPresentationStore(getApplication()).remove(uri)
+    }
+
+    private suspend fun completeClipDeletion(uri: android.net.Uri, onDeleted: () -> Unit) {
+        forgetDeletedClip(uri)
+        _clipDeletion.value = ClipDeletionState()
+        refreshGallery()
+        _toast.value = "影片已刪除"
+        onDeleted()
+    }
+
+    fun onDeleteApprovalResult(granted: Boolean) {
+        batchApproval?.let { it.complete(granted); return }
+        val pending = pendingDeletion ?: return
+        pendingDeletion = null
+        _deleteApproval.value = null
+        if (!granted) {
+            _clipDeletion.value = ClipDeletionState(pending.uri, error = "已取消刪除，影片仍保留。")
+        } else if (pending.retry) {
+            _clipDeletion.value = ClipDeletionState()
+            deleteClip(pending.uri, pending.onDeleted)
+        } else viewModelScope.launch {
+            try {
+                check(!galleryRepository.clipExists(pending.uri)) { "Video still exists" }
+                completeClipDeletion(pending.uri, pending.onDeleted)
+            } catch (failure: Exception) {
+                _clipDeletion.value = ClipDeletionState(pending.uri, error = "影片未能刪除，請重試。")
             }
         }
     }
@@ -794,6 +1065,11 @@ class DelayCamViewModel(application: Application) : AndroidViewModel(application
         }
         cameraAnalysisExecutor.shutdown()
         recordingCommands.close()
+        while (true) {
+            val pending = recordingCommands.tryReceive().getOrNull() ?: break
+            if (pending is RecordingCommand.Append) pending.lease?.close()
+        }
+        delayedPlayback.reset()
         CoroutineScope(Dispatchers.IO).launch { continuousRecordingSession.releaseResources() }
         livePlayer.release()
         replayPlayer.release()

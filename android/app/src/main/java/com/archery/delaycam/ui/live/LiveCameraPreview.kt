@@ -6,7 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -24,7 +24,13 @@ fun LiveCameraPreview(
     width: Dp,
     modifier: Modifier = Modifier,
     showLabel: Boolean = true,
+    aspectRatio: Float = 3f / 4f,
 ) {
+    var host by remember { mutableStateOf<PreviewView?>(null) }
+    DisposableEffect(preview, host) {
+        host?.let { preview.surfaceProvider = it.surfaceProvider }
+        onDispose { preview.setSurfaceProvider(null) }
+    }
     Column(modifier.width(if (visible) width else 1.dp)
         .graphicsLayer { alpha = if (visible) 1f else 0f }
         .then(if (visible) Modifier else Modifier.clearAndSetSemantics {})
@@ -34,10 +40,10 @@ fun LiveCameraPreview(
         AndroidView(factory = { context -> PreviewView(context).apply {
             tag = "live-camera-preview-host"
             implementationMode = PreviewView.ImplementationMode.COMPATIBLE
-            scaleType = PreviewView.ScaleType.FIT_CENTER
-            preview.surfaceProvider = surfaceProvider
+            scaleType = PreviewView.ScaleType.FILL_CENTER
+            host = this
         } },
-            modifier = Modifier.fillMaxWidth().aspectRatio(3f / 4f)
+            modifier = Modifier.fillMaxWidth().aspectRatio(aspectRatio)
                 .semantics { contentDescription = "即時相機取景" })
     }
 }

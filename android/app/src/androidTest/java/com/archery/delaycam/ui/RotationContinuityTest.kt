@@ -1,0 +1,224 @@
+package com.archery.delaycam.ui
+
+import android.Manifest
+import android.content.ContentValues
+import android.content.pm.ActivityInfo
+import android.content.res.Configuration
+import android.graphics.Bitmap
+import android.media.MediaMetadataRetriever
+import android.provider.MediaStore
+import android.view.Surface
+import android.hardware.display.DisplayManager
+import androidx.camera.core.ImageAnalysis
+import androidx.camera.view.PreviewView
+import androidx.compose.ui.test.*
+import androidx.compose.ui.test.junit4.createEmptyComposeRule
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.ViewModelProvider
+import androidx.test.core.app.ActivityScenario
+import androidx.test.platform.app.InstrumentationRegistry
+import com.archery.delaycam.settings.SettingsRepository
+import com.archery.delaycam.settings.PreviewCorner
+import com.archery.delaycam.settings.PictureMode
+import com.archery.delaycam.settings.CaptureAspect
+import com.archery.delaycam.R
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.flow.first
+import com.archery.delaycam.MainActivity
+import com.archery.delaycam.camera.RecordingPhase
+import com.archery.delaycam.state.SavePhase
+import org.junit.Assert.*
+import org.junit.Rule
+import org.junit.Test
+import java.util.concurrent.atomic.AtomicInteger
+
+/** Exercise the actual manifest, camera, encoder and activity lifecycle together. */
+class RotationContinuityTest {
+    @get:Rule val compose = createEmptyComposeRule()
+    private val instrumentation = InstrumentationRegistry.getInstrumentation()
+
+    private fun field(target: Any, name: String): Any? = target.javaClass.getDeclaredField(name)
+        .apply { isAccessible = true }.get(target)
+
+    @Test(timeout = 180_000) fun landscapeLaunchAndRotationKeepPreviewBufferAndRecording() {
+        val automation = instrumentation.uiAutomation
+        automation.grantRuntimePermission(instrumentation.targetContext.packageName, Manifest.permission.CAMERA)
+        val repository = SettingsRepository(instrumentation.targetContext)
+        val previousSettings = runBlocking { repository.settingsFlow.first() }
+        var savedUri: android.net.Uri? = null
+        try {
+            ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+                lateinit var activity: MainActivity
+                lateinit var vm: DelayCamViewModel
+                val renderedFrames = AtomicInteger()
+                scenario.onActivity {
+                    activity = it
+                    // fullSensor intentionally ignores the OS user-rotation lock.
+                    // Request the test orientation on the Activity itself.
+                    it.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+                    vm = ViewModelProvider(it)[DelayCamViewModel::class.java]
+                    vm.livePlayer.setVideoFrameMetadataListener { _, _, _, _ -> renderedFrames.incrementAndGet() }
+                }
+                compose.waitUntil(10_000) {
+                    activity.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+                }
+                compose.onNodeWithContentDescription("即時相機取景").assertIsDisplayed()
+                compose.waitUntil(45_000) { vm.warmupRemainingSec.value == null && vm.cameraSessionForFrame() != null }
+                compose.onNodeWithContentDescription("顯示操作").performClick()
+                compose.onNodeWithText("設定").performClick()
+                val beforeModeSession = vm.cameraSessionForFrame()
+                lateinit var sourceHost: PreviewView
+                scenario.onActivity { sourceHost = it.window.decorView.findViewWithTag("live-camera-preview-host") }
+                val beforeModeGeneration = field(vm, "bufferGeneration")
+                val beforeModeEncoder = field(vm, "segmentEncoder")
+                compose.onNodeWithText("16:9").performScrollTo().performClick().assertIsSelected()
+                runBlocking { repository.settingsFlow.first { it.captureAspect == CaptureAspect.SIXTEEN_NINE } }
+                compose.waitUntil(15_000) { !vm.cameraSourceStatus.value.switching }
+                assertEquals(CaptureAspect.SIXTEEN_NINE, vm.cameraSourceStatus.value.source)
+                scenario.onActivity {
+                    assertSame(sourceHost, it.window.decorView.findViewWithTag<PreviewView>("live-camera-preview-host"))
+                    val size = (field(it, "imageAnalysis") as ImageAnalysis).resolutionInfo!!.resolution
+                    assertEquals(16f / 9f, size.width.toFloat() / size.height, .001f)
+                }
+                compose.onNodeWithText("滿版").performScrollTo().performClick().assertIsSelected()
+                runBlocking { repository.settingsFlow.first { it.pictureMode == PictureMode.FILL } }
+                compose.onNodeWithText("左下").performScrollTo().performClick().assertIsSelected()
+                runBlocking { repository.settingsFlow.first { it.previewCorner == PreviewCorner.BOTTOM_LEFT } }
+                compose.onNodeWithText("右下").performClick().assertIsSelected()
+                runBlocking { repository.settingsFlow.first { it.previewCorner == PreviewCorner.BOTTOM_RIGHT } }
+                compose.onNodeWithText("左下").performClick().assertIsSelected()
+                runBlocking { repository.settingsFlow.first { it.previewCorner == PreviewCorner.BOTTOM_LEFT } }
+                compose.onNodeWithText("‹").performScrollTo().performClick()
+                compose.onNodeWithContentDescription("收起操作").performClick()
+                val previewBounds = compose.onNodeWithContentDescription("即時相機取景").fetchSemanticsNode().boundsInRoot
+                val screenBounds = compose.onNodeWithTag("practice-layout").fetchSemanticsNode().boundsInRoot
+                assertTrue("Left corner setting places PiP on the left", previewBounds.center.x < screenBounds.center.x)
+                assertTrue("Landscape PiP is larger than the old 96 dp cap", previewBounds.width / activity.resources.displayMetrics.density > 96f)
+                scenario.onActivity {
+                    val video = it.window.decorView.findViewWithTag<android.view.View>("archery-video-player")
+                    assertEquals("FILL", video.getTag(R.id.picture_mode))
+                    assertEquals(beforeModeSession, vm.cameraSessionForFrame())
+                    assertEquals(beforeModeGeneration, field(vm, "bufferGeneration"))
+                    assertSame(beforeModeEncoder, field(vm, "segmentEncoder"))
+                }
+                val session = vm.cameraSessionForFrame()
+                val generation = field(vm, "bufferGeneration")
+                val encoder = field(vm, "segmentEncoder")
+                assertNotNull(encoder)
+                compose.waitUntil(5_000) { kotlin.math.abs(vm.cameraAspectRatio.value - 16f / 9f) < .001f }
+                lateinit var preview: PreviewView
+                scenario.onActivity {
+                    preview = it.window.decorView.findViewWithTag("live-camera-preview-host")
+                    vm.toggleContinuousRecording()
+                }
+                compose.waitUntil(10_000) { vm.recordingPhase.value == RecordingPhase.RECORDING }
+                compose.onNodeWithContentDescription("顯示操作").performClick()
+                compose.onNodeWithText("設定").performClick()
+                compose.onNodeWithText("16:9").performScrollTo().assertIsNotEnabled()
+                compose.onNodeWithText("4:3").assertIsNotEnabled()
+                scenario.onActivity { vm.updateSettings { it.copy(captureAspect = CaptureAspect.FOUR_THREE) } }
+                assertEquals(CaptureAspect.SIXTEEN_NINE, vm.settings.value.captureAspect)
+                compose.onNodeWithText("‹").performScrollTo().performClick()
+                compose.onNodeWithContentDescription("收起操作").performClick()
+
+                fun physicalRotation() = activity.applicationContext.getSystemService(DisplayManager::class.java)
+                    .getDisplay(activity.window.decorView.display.displayId).rotation
+                fun rotate(orientation: Int, expectedConfiguration: Int) {
+                    scenario.onActivity { it.requestedOrientation = orientation }
+                    try { compose.waitUntil(10_000) {
+                        activity.resources.configuration.orientation == expectedConfiguration &&
+                            physicalRotation() == when (orientation) {
+                                ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE -> Surface.ROTATION_90
+                                ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE -> Surface.ROTATION_270
+                                else -> Surface.ROTATION_0
+                            } &&
+                            (field(activity, "imageAnalysis") as? ImageAnalysis)?.targetRotation ==
+                            physicalRotation()
+                    } } catch (failure: Throwable) {
+                        throw AssertionError("rotation requested=$orientation physical=${physicalRotation()} " +
+                            "window=${activity.window.decorView.display.rotation} " +
+                            "analysis=${(field(activity, "imageAnalysis") as? ImageAnalysis)?.targetRotation}", failure)
+                    }
+                    compose.waitForIdle()
+                    scenario.onActivity {
+                        assertSame("Rotation must not recreate MainActivity", activity, it)
+                        assertSame(vm, ViewModelProvider(it)[DelayCamViewModel::class.java])
+                        assertSame(preview, it.window.decorView.findViewWithTag<PreviewView>("live-camera-preview-host"))
+                        assertEquals(session, vm.cameraSessionForFrame())
+                        assertEquals("Rotation must not clear delay history", generation, field(vm, "bufferGeneration"))
+                        assertSame("Keep the same encoder", encoder, field(vm, "segmentEncoder"))
+                        assertNull("No new warmup after rotation", vm.warmupRemainingSec.value)
+                        assertEquals(RecordingPhase.RECORDING, vm.recordingPhase.value)
+                    }
+                }
+
+                screenshot("rotation-cold-landscape")
+                rotate(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT, Configuration.ORIENTATION_PORTRAIT)
+                compose.onNodeWithContentDescription("即時相機取景").assertIsDisplayed()
+                compose.onNodeWithText("收起即時視窗").performClick()
+                compose.onNodeWithContentDescription("即時相機取景").assertDoesNotExist()
+                rotate(ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE, Configuration.ORIENTATION_LANDSCAPE)
+                compose.onNodeWithContentDescription("即時相機取景").assertDoesNotExist()
+                compose.onNodeWithContentDescription("顯示操作").performClick()
+                compose.onNodeWithText("顯示即時").performScrollTo().performClick()
+                compose.onNodeWithContentDescription("收起操作").performClick()
+                compose.onNodeWithContentDescription("即時相機取景").assertIsDisplayed()
+                rotate(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE, Configuration.ORIENTATION_LANDSCAPE)
+                compose.onNodeWithContentDescription("即時相機取景").assertIsDisplayed()
+                // Let the new orientation reach finalized segments and delayed playback.
+                val elapsed = vm.recordingElapsedSec.value
+                compose.waitUntil(20_000) { vm.recordingElapsedSec.value >= elapsed + 8 }
+                val beforeFrames = renderedFrames.get()
+                compose.waitUntil(10_000) { renderedFrames.get() >= beforeFrames + 5 }
+                scenario.onActivity {
+                    assertEquals(generation, field(vm, "bufferGeneration"))
+                    assertNull(vm.warmupRemainingSec.value)
+                    assertSame(encoder, field(vm, "segmentEncoder"))
+                }
+                screenshot("rotation-recording-landscape")
+                scenario.onActivity { vm.toggleContinuousRecording() }
+                compose.waitUntil(45_000) { vm.recordingSave.value.phase == SavePhase.SAVED }
+                savedUri = vm.recordingSave.value.uri
+                assertNotNull(savedUri)
+                val retriever = MediaMetadataRetriever()
+                try {
+                    retriever.setDataSource(instrumentation.targetContext, savedUri!!)
+                    val duration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)!!.toLong()
+                    assertTrue("Recording must continue through rotation", duration >= 7_000)
+                    val frame = retriever.getFrameAtTime((duration - 1_000) * 1_000)
+                    assertNotNull("Post-rotation recording must decode", frame)
+                    frame?.recycle()
+                } finally { retriever.release() }
+
+                // Genuine backgrounding must still discard old footage on return.
+                scenario.moveToState(Lifecycle.State.CREATED)
+                assertNull(vm.cameraSessionForFrame())
+                scenario.moveToState(Lifecycle.State.RESUMED)
+                compose.waitUntil(10_000) { vm.cameraSessionForFrame() != null }
+                assertNotEquals(session, vm.cameraSessionForFrame())
+                assertNotEquals(generation, field(vm, "bufferGeneration"))
+            }
+        } finally {
+            runBlocking { repository.save(previousSettings) }
+            savedUri?.let { instrumentation.targetContext.contentResolver.delete(it, null, null) }
+        }
+    }
+
+    private fun screenshot(name: String) {
+        compose.waitForIdle()
+        val resolver = instrumentation.targetContext.contentResolver
+        val values = ContentValues().apply {
+            put(MediaStore.Images.Media.DISPLAY_NAME, "$name.png")
+            put(MediaStore.Images.Media.MIME_TYPE, "image/png")
+            put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/ArcheryUiReview")
+            put(MediaStore.Images.Media.IS_PENDING, 1)
+        }
+        val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)!!
+        val bitmap = instrumentation.uiAutomation.takeScreenshot()!!
+        try { resolver.openOutputStream(uri)!!.use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) } }
+        finally { bitmap.recycle() }
+        values.clear()
+        values.put(MediaStore.Images.Media.IS_PENDING, 0)
+        resolver.update(uri, values, null, null)
+    }
+}

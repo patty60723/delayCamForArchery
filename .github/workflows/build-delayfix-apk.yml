@@ -1,4 +1,4 @@
-name: Build and verify recording UX APK
+name: Build and verify requested camera source APK
 
 on:
   push:
@@ -8,6 +8,9 @@ on:
     paths-ignore:
       - "docs/**"
   workflow_dispatch:
+
+env:
+  ORG_GRADLE_PROJECT_fastResumeTrial: "true"
 
 permissions:
   contents: read
@@ -62,18 +65,27 @@ jobs:
               for key in totals:
                   totals[key] += int(root.attrib.get(key, '0'))
           print('UNIT_TEST_RESULTS', totals)
-          if totals['failures'] or totals['errors']:
-              raise SystemExit('Unit tests failed')
+          if totals['failures'] or totals['errors'] or totals['skipped']:
+              raise SystemExit('Unit tests failed or were skipped')
           PY
       - name: Verify APK signature
         run: |
           "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --verbose --print-certs app/build/outputs/apk/debug/app-debug.apk
           signed_apk_cert=$("$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --print-certs app/build/outputs/apk/debug/app-debug.apk | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')
           test "$signed_apk_cert" = "a2e1d47174b2a24a99045fd4795ba37f97f115d3143733067a4859ce8555b042"
+          "$ANDROID_HOME/build-tools/34.0.0/aapt" dump badging app/build/outputs/apk/debug/app-debug.apk > app/build/apk-metadata.txt
+          python3 - <<'PYMETA'
+          from pathlib import Path
+          metadata = Path('app/build/apk-metadata.txt').read_text()
+          assert "name='com.archery.delaycam.fastresume'" in metadata
+          assert "versionName='0.2.14-fast-return-test'" in metadata
+          assert "application-label:'測試18·箭影'" in metadata
+          print('COEXISTENCE_APK_IDENTITY_OK')
+          PYMETA
           sha256sum app/build/outputs/apk/debug/app-debug.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: delaycam-recording-ux-v3-apk
+          name: delaycam-fast-return-comparison-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
@@ -116,7 +128,15 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none -camera-front emulated
           script: |
             chmod +x gradlew
-            ./gradlew :app:connectedDebugAndroidTest --no-daemon --stacktrace
+            ./gradlew :app:assembleDebug -PfastResumeTrial=false --no-daemon --stacktrace
+            adb install -r app/build/outputs/apk/debug/app-debug.apk
+            ./gradlew :app:connectedDebugAndroidTest -PfastResumeTrial=true --no-daemon --stacktrace || { mkdir -p app/build/ui-screenshots; adb pull /sdcard/Pictures/ArcheryUiReview app/build/ui-screenshots; exit 1; }
+            adb install -r app/build/outputs/apk/debug/app-debug.apk
+            adb shell pm path com.archery.delaycam.delayfix3 > app/build/stable-installed.txt
+            adb shell pm path com.archery.delaycam.fastresume > app/build/trial-installed.txt
+            test -s app/build/stable-installed.txt
+            test -s app/build/trial-installed.txt
+            echo COEXISTENCE_INSTALL_OK
             mkdir -p app/build/ui-screenshots
             adb pull /sdcard/Pictures/ArcheryUiReview app/build/ui-screenshots
       - uses: actions/upload-artifact@v4

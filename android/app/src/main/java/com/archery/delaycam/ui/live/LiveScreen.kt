@@ -12,7 +12,7 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.dp
-import com.archery.delaycam.settings.DominantHand
+import com.archery.delaycam.settings.PreviewCorner
 import com.archery.delaycam.state.AppState
 import com.archery.delaycam.state.SavePhase
 import com.archery.delaycam.ui.DelayCamViewModel
@@ -27,13 +27,13 @@ fun LiveScreen(
     onOpenSavedClip: (Uri, String) -> Unit,
     onPreviewBounds: (Rect?) -> Unit,
 ) {
+    val cameraAspect by viewModel.cameraAspectRatio.collectAsState()
     val settings by viewModel.settings.collectAsState()
     val warmup by viewModel.warmupRemainingSec.collectAsState()
     val state by viewModel.appState.collectAsState()
     val save by viewModel.clipSave.collectAsState()
     val mirrored by viewModel.mirrorVideo.collectAsState()
-    var portraitPreview by rememberSaveable { mutableStateOf(true) }
-    var landscapePreview by rememberSaveable { mutableStateOf(false) }
+    var showPreview by rememberSaveable { mutableStateOf(true) }
     var showHelp by remember { mutableStateOf(false) }
     DisposableEffect(onPreviewBounds) { onDispose { onPreviewBounds(null) } }
     val canSave = state == AppState.LIVE && warmup == null &&
@@ -61,36 +61,35 @@ fun LiveScreen(
             if (!sidePanel) SaveStatusNotice(save, viewModel::retryClipSave, onOpenSavedClip)
         },
         video = { videoModifier -> BoxWithConstraints(videoModifier) {
-            VideoPlayer(viewModel.livePlayer, mirrored, Modifier.fillMaxSize())
+            VideoPlayer(viewModel.livePlayer, mirrored, Modifier.fillMaxSize(), fitActivePicture = true, pictureMode = settings.pictureMode)
             GuideOverlay(settings.guideVertical, settings.guideHorizontal, Modifier.fillMaxSize())
             warmup?.let { remaining ->
                 DelayWarmupIndicator(remaining, settings.delaySec, Modifier.align(Alignment.Center))
             }
             val landscape = maxWidth > maxHeight
-            val showPreview = if (landscape) landscapePreview else portraitPreview
-            val previewWidth = if (landscape) (maxHeight * 0.24f).coerceIn(64.dp, 96.dp)
-                else 96.dp
-            val previewAlignment = if (landscape) Alignment.BottomEnd
-                else if (settings.dominantHand == DominantHand.LEFT) Alignment.TopEnd
-                else Alignment.TopStart
+            val widthLimit = if (landscape) (maxWidth * 0.27f).coerceAtMost(240.dp)
+                else (maxWidth * 0.42f).coerceAtMost(180.dp)
+            val heightLimit = (maxHeight * (if (landscape) 0.42f else 0.48f) - 24.dp).coerceAtLeast(1.dp)
+            val previewWidth = minOf(widthLimit, heightLimit * cameraAspect)
+            val previewAlignment = if (settings.previewCorner == PreviewCorner.BOTTOM_LEFT)
+                Alignment.BottomStart else Alignment.BottomEnd
             if (showPreview) Column(Modifier.align(previewAlignment).padding(8.dp)
                 .width(previewWidth).background(MaterialTheme.colorScheme.surface)) {
                 Text("即時", Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                     style = MaterialTheme.typography.labelMedium)
-                Box(Modifier.fillMaxWidth().aspectRatio(3f / 4f)
+                Box(Modifier.fillMaxWidth().aspectRatio(cameraAspect)
                     .onGloballyPositioned { onPreviewBounds(it.boundsInRoot()) })
             }
             LaunchedEffect(showPreview) { if (!showPreview) onPreviewBounds(null) }
         } },
         controls = { sidePanel ->
-            val showPreview = if (sidePanel) landscapePreview else portraitPreview
             LiveSaveActions(canSave, sidePanel,
                 onSaveAndReview = { viewModel.triggerSave() },
                 onSaveOnly = { viewModel.triggerSave(playAfterSave = false) })
             Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp),
                 horizontalArrangement = Arrangement.SpaceBetween) {
                 TextButton(onClick = {
-                    if (sidePanel) landscapePreview = !landscapePreview else portraitPreview = !portraitPreview
+                    showPreview = !showPreview
                 }) {
                     Text(if (sidePanel) { if (showPreview) "收起即時" else "顯示即時" }
                         else { if (showPreview) "收起即時視窗" else "顯示即時視窗" })
@@ -98,6 +97,7 @@ fun LiveScreen(
                 TextButton(onClick = { showHelp = true }) { Text("操作說明") }
             }
         },
+        feedbackOnRight = showPreview && settings.previewCorner == PreviewCorner.BOTTOM_LEFT,
         landscapeFeedback = { modifier ->
             if (save.phase != SavePhase.IDLE) Surface(modifier,
                 color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),

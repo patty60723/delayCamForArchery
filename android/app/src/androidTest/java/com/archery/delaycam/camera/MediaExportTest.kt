@@ -111,4 +111,54 @@ class MediaExportTest {
             assertEquals(0, it!!.count)
         }
     }
+
+    @Test fun realEncoderPublishesImmutablePlayableSegmentsWithUsableSourceTiming() {
+        val store = ImmutableSegmentStore(context.cacheDir, "encoder_test_${UUID.randomUUID()}")
+        val segments = java.util.Collections.synchronizedList(mutableListOf<SegmentInfo>())
+        val leases = java.util.Collections.synchronizedList(mutableListOf<ImmutableSegmentStore.Lease>())
+        val stopped = java.util.concurrent.CountDownLatch(1)
+        val encoder = ContinuousSegmentEncoder(context.cacheDir, { segment ->
+            store.acquire(listOf(segment))?.let { leases.add(it); segments.add(segment) }
+        }, { stopped.countDown() }, immutableStore = store)
+        val bitmap = android.graphics.Bitmap.createBitmap(320, 240, android.graphics.Bitmap.Config.ARGB_8888)
+        val portrait = android.graphics.Bitmap.createBitmap(240, 320, android.graphics.Bitmap.Config.ARGB_8888)
+        encoder.setRingSize(2)
+        try {
+            val deadline = android.os.SystemClock.elapsedRealtime() + 7_000
+            while (android.os.SystemClock.elapsedRealtime() < deadline) {
+                bitmap.eraseColor(android.graphics.Color.GREEN)
+                portrait.eraseColor(android.graphics.Color.RED)
+                encoder.onFrame(if (deadline - android.os.SystemClock.elapsedRealtime() > 3_500) bitmap else portrait)
+                android.os.SystemClock.sleep(50)
+            }
+            encoder.stop()
+            assertTrue(stopped.await(10, java.util.concurrent.TimeUnit.SECONDS))
+            val completed = segments.toList()
+            assertTrue("Need multiple keyframe-bounded files", completed.size >= 3)
+            assertEquals(completed.size, completed.map { it.file }.distinct().size)
+            assertTrue("Source/media timing must support fast seek", completed.dropLast(1).any { FastResumePlan.valid(it) })
+            assertTrue("Landscape samples retain their active picture shape", completed.any { it.contentAspectRatio == 4f / 3f })
+            assertTrue("Portrait samples retain their active picture shape", completed.any { it.contentAspectRatio == 3f / 4f })
+            completed.forEach { segment ->
+                val retriever = MediaMetadataRetriever()
+                try {
+                    retriever.setDataSource(segment.file.absolutePath)
+                    assertEquals("320", retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH))
+                    assertEquals("320", retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT))
+                    val actualDuration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)!!.toLong()
+                    assertTrue("MP4 duration=$actualDuration must match seek duration=${segment.mediaDurationMs}",
+                        kotlin.math.abs(actualDuration - segment.mediaDurationMs) <= 200L)
+                    val frame = retriever.getFrameAtTime(0)
+                    assertNotNull(frame)
+                    frame?.recycle()
+                } finally { retriever.release() }
+            }
+        } finally {
+            encoder.stop()
+            bitmap.recycle()
+            portrait.recycle()
+            leases.forEach { it.close() }
+            store.close()
+        }
+    }
 }

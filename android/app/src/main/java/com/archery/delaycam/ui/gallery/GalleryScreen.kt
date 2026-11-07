@@ -4,26 +4,19 @@ import android.graphics.Bitmap
 import android.media.MediaMetadataRetriever
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.semantics.*
+import androidx.compose.ui.state.ToggleableState
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -34,6 +27,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.archery.delaycam.gallery.ClipEntry
 import com.archery.delaycam.ui.DelayCamViewModel
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
@@ -48,34 +42,76 @@ fun GalleryScreen(
     onOpenClip: (ClipEntry) -> Unit,
 ) {
     val clips by viewModel.galleryClips.collectAsState()
-
+    val selection by viewModel.gallerySelection.collectAsState()
+    val deleting by viewModel.batchDeleting.collectAsState()
+    val singleDeletion by viewModel.clipDeletion.collectAsState()
+    val message by viewModel.galleryMessage.collectAsState()
+    val loading by viewModel.galleryLoading.collectAsState()
+    val sharing = rememberClipSharing()
+    val scope = rememberCoroutineScope()
+    var confirm by remember { mutableStateOf(false) }
+    val busy = deleting || singleDeletion.busy || sharing.busy
+    val selected = clips.filter { it.uri.toString() in selection.ids }
+    val back = { if (selection.active && !busy) viewModel.cancelGallerySelection() else onBack() }
+    BackHandler(onBack = back)
     LaunchedEffect(Unit) { viewModel.refreshGallery() }
 
-    Column(modifier = Modifier.fillMaxSize().background(Color.Black).padding(16.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onBack) { Text("‹", color = Color.White) }
-            Text("畫廊", color = Color.White)
+    Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(horizontal = 12.dp)) {
+        Row(Modifier.fillMaxWidth().heightIn(min = 56.dp), verticalAlignment = Alignment.CenterVertically) {
+            TextButton(onClick = back) { Text(if (selection.active && !busy) "取消" else "返回") }
+            Text(if (selection.active) "已選 ${selected.size} 段" else "畫廊", Modifier.weight(1f),
+                style = MaterialTheme.typography.titleMedium)
+            if (!selection.active) TextButton(onClick = viewModel::enterGallerySelection,
+                enabled = clips.isNotEmpty() && !busy) { Text("選取") }
         }
-
+        Row(Modifier.fillMaxWidth().heightIn(min = 56.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (selection.active) {
+                Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                    TriStateCheckbox(state = when {
+                        selected.isEmpty() -> ToggleableState.Off
+                        selected.size == clips.size -> ToggleableState.On
+                        else -> ToggleableState.Indeterminate
+                    }, onClick = viewModel::selectAllGalleryClips, enabled = !busy && clips.isNotEmpty(),
+                        modifier = Modifier.semantics { contentDescription = "全選影片" })
+                    Text("全選")
+                }
+                TextButton(onClick = { sharing.share(selected.map { it.uri }) }, enabled = selected.isNotEmpty() && !busy) { Text("分享") }
+                TextButton(onClick = { confirm = true }, enabled = selected.isNotEmpty() && !busy) { Text("刪除", color = if (!busy && selected.isNotEmpty()) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant) }
+            } else Text("長按影片可多選、刪除或分享", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Row(Modifier.fillMaxWidth().heightIn(min = 40.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(sharing.error ?: if (sharing.busy) "正在準備分享…" else if (loading) "正在讀取畫廊…" else message.orEmpty(),
+                Modifier.weight(1f), style = MaterialTheme.typography.bodySmall,
+                color = if (sharing.error != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+            TextButton(onClick = { scope.launch { viewModel.refreshGallery() } }, enabled = !busy && !loading) { Text("重新整理") }
+        }
         if (clips.isEmpty()) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("尚未有存檔片段", color = Color(0xFF9AA1AB))
+            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                Text(if (loading) "正在讀取…" else "尚未有存檔片段", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-        } else {
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(2),
-                modifier = Modifier.fillMaxSize().padding(top = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                items(clips) { clip -> ClipCard(clip = clip, onClick = { onOpenClip(clip) }) }
+        } else LazyVerticalGrid(
+            columns = GridCells.Adaptive(156.dp), modifier = Modifier.weight(1f).fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            items(clips, key = { it.uri.toString() }) { clip ->
+                ClipCard(clip, selection.active, clip.uri.toString() in selection.ids, !busy,
+                    onClick = { if (selection.active) viewModel.selectGalleryClip(clip.uri.toString()) else onOpenClip(clip) },
+                    onLongClick = { viewModel.selectGalleryClip(clip.uri.toString()) })
             }
         }
     }
+    if (confirm) AlertDialog(
+        onDismissRequest = { confirm = false },
+        title = { Text("刪除 ${selected.size} 段影片？") },
+        text = { Text("將刪除手機中選取的影片，無法從 App 復原。其他影片會保留。") },
+        dismissButton = { TextButton(onClick = { confirm = false }) { Text("保留影片") } },
+        confirmButton = { TextButton(onClick = { confirm = false; viewModel.deleteSelectedGalleryClips() }, enabled = !busy && selected.isNotEmpty()) { Text("確認刪除") } },
+    )
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ClipCard(clip: ClipEntry, onClick: () -> Unit) {
+private fun ClipCard(clip: ClipEntry, selecting: Boolean, checked: Boolean, enabled: Boolean, onClick: () -> Unit, onLongClick: () -> Unit) {
     val context = LocalContext.current
     val thumbnail by produceState<Bitmap?>(initialValue = null, key1 = clip.uri) {
         value = withContext(Dispatchers.IO) {
@@ -104,22 +140,28 @@ private fun ClipCard(clip: ClipEntry, onClick: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .background(Color(0xFF14171C))
-            .clickable(onClick = onClick),
+            .background(MaterialTheme.colorScheme.surface)
+            .semantics(mergeDescendants = true) {
+                if (selecting) { selected = checked; toggleableState = if (checked) ToggleableState.On else ToggleableState.Off }
+            }
+            .combinedClickable(enabled = enabled, role = if (selecting) Role.Checkbox else Role.Button,
+                onClick = onClick, onLongClickLabel = "選取影片", onLongClick = onLongClick),
     ) {
         Box(modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(Color.Black)) {
             thumbnail?.let {
                 Image(
                     bitmap = it.asImageBitmap(),
-                    contentDescription = clip.displayName,
+                    contentDescription = null,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize(),
                 )
             }
+            if (selecting) Checkbox(checked = checked, onCheckedChange = null,
+                modifier = Modifier.align(Alignment.TopEnd).clearAndSetSemantics { })
         }
         Column(modifier = Modifier.padding(8.dp)) {
-            Text(clip.displayName, color = Color.White, maxLines = 1)
-            Text(clipSubtitle(clip), color = Color(0xFF9AA1AB))
+            Text(clip.displayName, color = MaterialTheme.colorScheme.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(clipSubtitle(clip), color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
